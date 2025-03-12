@@ -47,6 +47,8 @@ typedef struct barometerConfig_s {
     uint8_t baro_hardware;                  // Barometer hardware to use
     ioTag_t baro_eoc_tag;
     ioTag_t baro_xclr_tag;
+    int16_t baro_arm_altitude_meters;
+    uint16_t baro_arm_throttle;
 } barometerConfig_t;
 
 PG_DECLARE(barometerConfig_t, barometerConfig);
@@ -56,6 +58,8 @@ PG_DECLARE(barometerConfig_t, barometerConfig);
 typedef struct baro_s {
     baroDev_t dev;
     float altitude;
+    float altitude_prev;
+    float altitude_velocity;
     int32_t temperature;                    // Use temperature for telemetry
     int32_t pressure;                       // Use pressure for telemetry
 } baro_t;
@@ -70,3 +74,6 @@ void baroSetGroundLevel(void);
 uint32_t baroUpdate(timeUs_t currentTimeUs);
 bool isBaroReady(void);
 float getBaroAltitude(void);
+bool isBaroAltitudeCheck(void);
+void zeroAltitude(void);
+void setIsFirstArmCall(bool value);

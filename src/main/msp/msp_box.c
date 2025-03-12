@@ -52,7 +52,7 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT] = {
     { .boxId = BOXHORIZON, .boxName = "HORIZON", .permanentId = 2 },
 //    { .boxId = BOXBARO, .boxName = "BARO", .permanentId = 3 },
     { .boxId = BOXANTIGRAVITY, .boxName = "ANTI GRAVITY", .permanentId = 4 },
-    { .boxId = BOXMAG, .boxName = "MAG", .permanentId = 5 },
+    { .boxId = BOXMAG, .boxName = "HELI DROP HEADING", .permanentId = 5 },
     { .boxId = BOXHEADFREE, .boxName = "HEADFREE", .permanentId = 6 },
     { .boxId = BOXHEADADJ, .boxName = "HEADADJ", .permanentId = 7 },
     { .boxId = BOXCAMSTAB, .boxName = "CAMSTAB", .permanentId = 8 },
@@ -102,6 +102,8 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT] = {
     { .boxId = BOXBEEPERMUTE, .boxName = "BEEPER MUTE", .permanentId = 52},
     { .boxId = BOXREADY, .boxName = "READY", .permanentId = 53},
     { .boxId = BOXLAPTIMERRESET, .boxName = "LAP TIMER RESET", .permanentId = 54},
+    { .boxId = BOXALTARM, .boxName = "HELI DROP ALT ARM", .permanentId = 55},
+    { .boxId = BOXFREEFALLARM, .boxName = "FREEFALL AUTO ARM", .permanentId = 56},
 };
 
 // mask of enabled IDs, calculated on startup based on enabled features. boxId_e is used as bit index
@@ -208,19 +210,22 @@ void initActiveBoxIds(void)
         BME(BOXHEADFREE);
         BME(BOXHEADADJ);
         BME(BOXFPVANGLEMIX);
+        BME(BOXFREEFALLARM);
         if (featureIsEnabled(FEATURE_INFLIGHT_ACC_CAL)) {
             BME(BOXCALIB);
         }
+    
+    if (sensors(SENSOR_BARO)) {
+        BME(BOXALTARM);
+    }
 #if defined(USE_ACRO_TRAINER) && defined(USE_ACC)
         BME(BOXACROTRAINER);
 #endif // USE_ACRO_TRAINER
     }
 
-#ifdef USE_MAG
-    if (sensors(SENSOR_MAG)) {
+    if (sensors(SENSOR_MAG) || sensors(SENSOR_ACC)) {
         BME(BOXMAG);
     }
-#endif
 
 #ifdef USE_GPS
     if (featureIsEnabled(FEATURE_GPS)) {

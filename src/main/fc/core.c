@@ -141,9 +141,7 @@ enum {
 #define DEBUG_RUNAWAY_TAKEOFF_FALSE 0
 #endif
 
-#if defined(USE_GPS) || defined(USE_MAG)
 int16_t magHold;
-#endif
 
 static FAST_DATA_ZERO_INIT uint8_t pidUpdateCounter;
 
@@ -162,6 +160,10 @@ static bool runawayTakeoffCheckDisabled = false;
 static timeUs_t runawayTakeoffTriggerUs = 0;
 static bool runawayTakeoffTemporarilyDisabled = false;
 #endif
+
+static bool isShouldUserControlThrottle = false;
+static bool isAutoArm = false;
+static timeUs_t autoArmTimeUs = 0;
 
 #ifdef USE_LAUNCH_CONTROL
 static launchControlState_e launchControlState = LAUNCH_CONTROL_DISABLED;
@@ -283,6 +285,7 @@ void updateArmingStatus(void)
             // If so, unset the grace time arming disable flag
             unsetArmingDisabled(ARMING_DISABLED_BOOT_GRACE_TIME);
         }
+
 
         // Clear the crash flip active status
         flipOverAfterCrashActive = false;
@@ -416,7 +419,9 @@ void updateArmingStatus(void)
             if (isArmingDisabled()
                 && !ignoreGyro
                 && !ignoreThrottle
-                && IS_RC_MODE_ACTIVE(BOXARM)) {
+                && IS_RC_MODE_ACTIVE(BOXARM)
+                && !IS_RC_MODE_ACTIVE(BOXALTARM)
+                && !IS_RC_MODE_ACTIVE(BOXFREEFALLARM)) {
                 setArmingDisabled(ARMING_DISABLED_ARM_SWITCH);
             } else if (!IS_RC_MODE_ACTIVE(BOXARM)) {
                 unsetArmingDisabled(ARMING_DISABLED_ARM_SWITCH);
@@ -439,6 +444,8 @@ void disarm(flightLogDisarmReason_e reason)
         if (!flipOverAfterCrashActive) {
             ENABLE_ARMING_FLAG(WAS_EVER_ARMED);
         }
+        isShouldUserControlThrottle = false;
+        isAutoArm = false;
         DISABLE_ARMING_FLAG(ARMED);
         lastDisarmTimeUs = micros();
 
@@ -482,8 +489,45 @@ void disarm(flightLogDisarmReason_e reason)
 
 void tryArm(void)
 {
+
     if (armingConfig()->gyro_cal_on_first_arm) {
         gyroStartCalibration(true);
+    }
+
+#if defined(USE_ACC)
+    if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
+        autoArmTimeUs = 0;
+        return;
+    } else {
+        if (autoArmTimeUs==0) {
+            autoArmTimeUs = micros();
+        } else if (cmpTimeUs(micros(), autoArmTimeUs) < (timeDelta_t)(accelerometerConfig()->auto_arm_delay_sec) * 1e6) {
+            return;
+        }
+        isAutoArm = true;
+    }
+
+#endif
+#ifdef USE_BARO
+    if (barometerConfig()->baro_arm_altitude_meters != 0 && IS_RC_MODE_ACTIVE(BOXALTARM)) {
+        if (!isBaroAltitudeCheck()) { // if baro altitude check is enabled, don't arm until it's ready
+            return;
+        } else{
+            isAutoArm = true;
+        }
+    }
+#endif
+    if (isAutoArm) {
+        if (!ARMING_FLAG(ARMED)) {
+            rcData[THROTTLE] = 1000;
+        } else if (!isShouldUserControlThrottle) {
+            if (rcData[THROTTLE] > barometerConfig()->baro_arm_throttle) {
+                // If the throttle is above the baro arm throttle, set it to the baro arm throttle
+                rcData[THROTTLE] = barometerConfig()->baro_arm_throttle;
+            } else {
+                isShouldUserControlThrottle = true;
+            }
+        }
     }
 
     updateArmingStatus();
@@ -608,7 +652,7 @@ void tryArm(void)
         runawayTakeoffTriggerUs = 0;
 #endif
     } else {
-       resetTryingToArm();
+        resetTryingToArm();
         if (!isFirstArmingGyroCalibrationRunning()) {
             int armingDisabledReason = ffs(getArmingDisableFlags());
             if (lastArmingDisabledReason != armingDisabledReason) {
@@ -659,10 +703,9 @@ static void updateInflightCalibrationState(void)
     }
 }
 
-#if defined(USE_GPS) || defined(USE_MAG)
 static void updateMagHold(void)
 {
-    if (fabsf(rcCommand[YAW]) < 15 && FLIGHT_MODE(MAG_MODE)) {
+    if (FLIGHT_MODE(MAG_MODE)) {
         int16_t dif = DECIDEGREES_TO_DEGREES(attitude.values.yaw) - magHold;
         if (dif <= -180)
             dif += 360;
@@ -670,12 +713,15 @@ static void updateMagHold(void)
             dif -= 360;
         dif *= -GET_DIRECTION(rcControlsConfig()->yaw_control_reversed);
         if (isUpright()) {
-            rcCommand[YAW] -= dif * currentPidProfile->pid[PID_MAG].P / 30;    // 18 deg
+            rcCommand[YAW] = -0.01 * dif * currentPidProfile->pid[PID_MAG].P;
+            rcCommand[YAW] = constrain(rcCommand[YAW], -500.0f, 500.0f);
+
+            DEBUG_SET(DEBUG_MAG_ERROR, 0, dif);
+            DEBUG_SET(DEBUG_MAG_ERROR, 1, (int16_t)rcCommand[YAW]);
         }
     } else
         magHold = DECIDEGREES_TO_DEGREES(attitude.values.yaw);
 }
-#endif
 
 #ifdef USE_VTX_CONTROL
 static bool canUpdateVTX(void)
@@ -1013,9 +1059,8 @@ void processRxModes(timeUs_t currentTimeUs)
         DISABLE_ARMING_FLAG(WAS_ARMED_WITH_PREARM);
     }
 
-#if defined(USE_ACC) || defined(USE_MAG)
+#if defined(USE_GPS) || defined(USE_MAG) || defined(USE_ACC)
     if (sensors(SENSOR_ACC) || sensors(SENSOR_MAG)) {
-#if defined(USE_GPS) || defined(USE_MAG)
         if (IS_RC_MODE_ACTIVE(BOXMAG)) {
             if (!FLIGHT_MODE(MAG_MODE)) {
                 ENABLE_FLIGHT_MODE(MAG_MODE);
@@ -1024,7 +1069,6 @@ void processRxModes(timeUs_t currentTimeUs)
         } else {
             DISABLE_FLIGHT_MODE(MAG_MODE);
         }
-#endif
         if (IS_RC_MODE_ACTIVE(BOXHEADFREE) && !FLIGHT_MODE(GPS_RESCUE_MODE)) {
             if (!FLIGHT_MODE(HEADFREE_MODE)) {
                 ENABLE_FLIGHT_MODE(HEADFREE_MODE);
@@ -1150,12 +1194,6 @@ static FAST_CODE_NOINLINE void subTaskPidSubprocesses(timeUs_t currentTimeUs)
         startTime = micros();
     }
 
-#if defined(USE_GPS) || defined(USE_MAG)
-    if (sensors(SENSOR_GPS) || sensors(SENSOR_MAG)) {
-        updateMagHold();
-    }
-#endif
-
 #ifdef USE_BLACKBOX
     if (!cliMode && blackboxConfig()->device) {
         blackboxUpdate(currentTimeUs);
@@ -1237,6 +1275,12 @@ static FAST_CODE_NOINLINE void subTaskRcCommand(timeUs_t currentTimeUs)
     ) {
         resetYawAxis();
     }
+
+#if defined(USE_GPS) || defined(USE_MAG) || defined(USE_ACC)
+    if (sensors(SENSOR_GPS) || sensors(SENSOR_MAG) || sensors(SENSOR_ACC)) {
+        updateMagHold();
+    }
+#endif
 
     processRcCommand();
 }

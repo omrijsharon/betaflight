@@ -126,7 +126,7 @@ void resetPidProfile(pidProfile_t *pidProfile)
             [PID_PITCH] = PID_PITCH_DEFAULT,
             [PID_YAW] =   PID_YAW_DEFAULT,
             [PID_LEVEL] = { 50, 75, 75, 50 },
-            [PID_MAG] =   { 40, 0, 0, 0 },
+            [PID_MAG] =   { 10, 0, 0, 0 },
         },
         .pidSumLimit = PIDSUM_LIMIT,
         .pidSumLimitYaw = PIDSUM_LIMIT_YAW,

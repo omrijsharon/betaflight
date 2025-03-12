@@ -53,6 +53,10 @@
 
 #include "fc/runtime_config.h"
 
+#ifdef USE_CCIP
+#include "flight/imu.h"
+#endif
+
 #include "sensors/sensors.h"
 
 #include "scheduler/scheduler.h"
@@ -60,6 +64,7 @@
 #include "barometer.h"
 
 baro_t baro;                        // barometer access functions
+timeUs_t prevTimeUs;
 
 PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFIG, 3);
 
@@ -70,7 +75,8 @@ PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFI
 void pgResetFn_barometerConfig(barometerConfig_t *barometerConfig)
 {
     barometerConfig->baro_hardware = DEFAULT_BARO_DEVICE;
-
+    barometerConfig->baro_arm_altitude_meters = 0;
+    barometerConfig->baro_arm_throttle = 1000;
     // For backward compatibility; ceate a valid default value for bus parameters
     //
     // 1. If DEFAULT_BARO_xxx is defined, use it.
@@ -175,6 +181,7 @@ static uint16_t calibrationCycleCount = 0;
 static float baroGroundAltitude = 0.0f;
 static bool baroCalibrated = false;
 static bool baroReady = false;
+static bool isFirstArmCall = true;
 
 void baroPreInit(void)
 {
@@ -394,7 +401,57 @@ static float pressureToAltitude(const float pressure)
     return (1.0f - powf(pressure / 101325.0f, 0.190295f)) * 4433000.0f;
 }
 
+
+void setIsFirstArmCall(bool value)
+{
+    isFirstArmCall = value;
+}
+
+void zeroAltitude(void)
+{
+    if (isFirstArmCall) {
+        // zero baro altitude
+        baroSetGroundLevel();
+        setIsFirstArmCall(false);
+    }
+}
+
+// the next function will check whether to arm or not depending on the baro altitude. since it detect of altitude is higher or lower than the set value and it is a bool function, it should be called isBaroAltitudeCheck
+bool isBaroAltitudeCheck(void)
+{
+    zeroAltitude();
+    if (barometerConfig()->baro_arm_altitude_meters > 0) { // set arm alt is higher than 0, check if alt is higher than arm alt, if not: cancel = false
+        if (baro.altitude < (barometerConfig()->baro_arm_altitude_meters*100)) {
+            return false;
+        }
+    } else {
+        if (baro.altitude > (barometerConfig()->baro_arm_altitude_meters*100)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void performBaroCalibrationCycle(const float altitude);
+
+// fastInverseSqrtf is a fast inverse square root function, it is used to calculate the square root of a number
+float fastInverseSqrtf(float x)
+{
+    union {
+        float f;
+        uint32_t i;
+    } conv = { x };
+    conv.i = 0x5f3759df - (conv.i >> 1);
+    return 0.5f * conv.f * (3.0f - x * conv.f * conv.f);
+}
+
+// after we have the x,y,z coordinates of the hit point in the world reference frame, we need to project this point to the camera reference frame
+// the camera reference frame is defined as follows:
+// x is the right vector
+// y is the down vector
+// z is the forward vector
+// the camera is looking forward, so the forward vector is the direction the camera is looking at
+// assuming we have a variable with tells us the camera angle, the next function will project the hit point to the camera reference frame
 
 uint32_t baroUpdate(timeUs_t currentTimeUs)
 {
@@ -469,15 +526,70 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
                 if (baroIsCalibrated()) {
                     // zero baro altitude
                     baro.altitude = altitude - baroGroundAltitude;
+#ifdef USE_CCIP
+                    if (baro.altitude_prev!=0.0) {
+                        baro.altitude_velocity = (baro.altitude - baro.altitude_prev)*1000000.0f / (currentTimeUs - prevTimeUs);
+                        prevTimeUs = currentTimeUs;
+                        baro.altitude_prev = baro.altitude;
+                        float pitch_deg = 0.1f * attitude.values.pitch
+                        float theta = 90.0f - pitch_deg;
+                        // d = h * tan(theta)
+                        // delta_h = -1/2*g*t^2 + dh/dt*t
+                        // t = (dh/dt  + sqrt((dh/dt)^2 + 1/2*g*h)) / g
+                        // float t = (baro.altitude_velocity + sqrtf(baro.altitude_velocity*baro.altitude_velocity + 0.5f*9.81f*baro.altitude)) / 9.81f;
+                        // a faster way to calculate sqrt is to use the fast inverse square root function and then multiply by the number
+                        // this is the equivalent of sqrtf(x) = 1/sqrtf(x) * x
+                        float t = (baro.altitude_velocity + 1.0f/fastInverseSqrtf(baro.altitude_velocity*baro.altitude_velocity + 0.5f*9.81f*baro.altitude)) / 9.81f;
+                        float dist2target = baro.altitude * tanf(theta);
+                        float dist2hit = baro.altitude_velocity * tanf(theta) * t;
+                        // now that we have the distance to the hit point and the and the altitude, we can calculate the x,y offset on the osd to show where the hit point is
+                        // the x,y offset is calculated by using the distance to the hit point and the altitude, this means we can have the x,y,z coordinates of the hit point in world reference frame
+                        // where z is the altitude, x is the distance to the hit point and y is 0.
+                        // we need to project this point to the camera reference frame, this is done by rotating the point by the pitch angle around the x axis.
+                        // we can use rMat from imu.c as the rotation matrix, the drone in at the origin of the world reference frame. x,y,z of the target is the x,y,z of the hit point in world reference frame
+                        // we need to calculate the rotation matrix which transforms the world reference frame to the camera reference frame
+                        // the camera reference frame is defined as follows:
+                        // x is the right vector
+                        // y is the down vector
+                        // z is the forward vector
+                        // the camera is looking forward, so the forward vector is the direction the camera is looking at
+                        // the matrix which transforms the body reference frame to the camera reference frame is:
+                        // | 0 -1 0 |
+                        // | 0 0 -1 |
+                        // | 1 0 0 |
+                        // this means that if we multiply the body reference frame by this matrix we get the camera reference frame
+                        // i.e. the vector (1,0,0) in the body reference frame is (0,0,1) in the camera reference frame
+                        // the vector (0,1,0) in the body reference frame is (0,-1,0) in the camera reference frame
+                        // the vector (0,0,1) in the body reference frame is (-1,0,0) in the camera reference frame
+                        // we can use this matrix to transform the world reference frame to the camera reference frame
+                        // since the camera has an angle, we will need to add a pitch camera angle to the rMat transpose.
+                        // the pitch camera angle is the angle between the camera and the body reference frame, this is the pitch angle
+                        // we can do this by rotating the rMat by the pitch angle around the y axis.
+
+                        
+                    }
+
+                    if (baro.altitude_prev==0.0 && baro.altitude_velocity==0.0){
+                        baro.altitude_prev = baro.altitude;
+                        prevTimeUs = currentTimeUs;
+                    }
+                    
+                    
+#endif
+
                 } else {
                     // establish stable baroGroundAltitude value to zero baro altitude with
                     performBaroCalibrationCycle(altitude);
                     baro.altitude = 0.0f;
+                    baro.altitude_prev = 0.0f;
+                    baro.altitude_velocity = 0.0f;
                 }
             } else {
                 // return 0 during calibration, reuse last value otherwise
                 if (!baroIsCalibrated()) {
                     baro.altitude = 0.0f;
+                    baro.altitude_prev = 0.0f;
+                    baro.altitude_velocity = 0.0f;
                 }
             }
 

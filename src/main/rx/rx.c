@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <string.h>
 
@@ -611,6 +612,22 @@ static uint16_t calculateChannelMovingAverage(uint8_t chan, uint16_t sample)
 
 static uint16_t getRxfailValue(uint8_t channel)
 {
+#if defined(USE_RX_MSP_OVERRIDE)
+    // Check if MSP override is enabled for this channel
+    bool override = ((1 << channel) & rxConfig()->msp_override_channels_mask) != 0;
+
+    // If it's one of the main 4 sticks and MSP override is actually switched on
+    if (channel < NON_AUX_CHANNEL_COUNT && IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override) {
+        // read the MSP override for this channel, clamp it within min/max
+        // This is a typical approach; you might already have a helper like rxMspOverrideReadRawRc().
+        uint16_t overrideValue = rxMspOverrideReadRawRc(&rxRuntimeState, rxConfig(), channel);
+
+        // Constrain the override to RX input range
+        overrideValue = constrain(overrideValue, rxConfig()->rx_min_usec, rxConfig()->rx_max_usec);
+
+        return overrideValue;
+    }
+#endif
     const rxFailsafeChannelConfig_t *channelFailsafeConfig = rxFailsafeChannelConfigs(channel);
     const bool boxFailsafeSwitchIsOn = IS_RC_MODE_ACTIVE(BOXFAILSAFE);
 
@@ -661,6 +678,14 @@ static void readRxChannelsApplyRanges(void)
 
         const uint8_t rawChannel = channel < RX_MAPPABLE_CHANNEL_COUNT ? rxConfig()->rcmap[channel] : channel;
 
+        // Grab the raw sample right away
+        float rawSample = rxRuntimeState.rcReadRawFn(&rxRuntimeState, rawChannel);
+
+        // If it's one of the first DEBUG16_VALUE_COUNT (8) channels, store it in debug
+        if (channel < DEBUG16_VALUE_COUNT) {
+            DEBUG_SET(DEBUG_RX_RAW, channel, lrintf(rawSample));
+        }
+
         // sample the channel
         float sample;
 #if defined(USE_RX_MSP_OVERRIDE)
@@ -692,6 +717,15 @@ void detectAndApplySignalLossBehaviour(void)
 
     for (int channel = 0; channel < rxChannelCount; channel++) {
         float sample = rcRaw[channel]; // sample has latest RC value, rcData has last 'accepted valid' value
+
+        // If we are in failsafe Stage 2 or the BOXFAILSAFE (Stage 1) is active - recenter the sticks in 
+        if (failsafeIsActive() || boxFailsafeSwitchIsOn) {
+            // If we are in failsafe Stage 2 or the BOXFAILSAFE (Stage 1) is active:
+            if (channel < NON_AUX_CHANNEL_COUNT) {
+                DEBUG_SET(DEBUG_RX_RAW, channel, 1500);
+            }
+        }
+
         const bool thisChannelValid = rxFlightChannelsValid && isPulseValid(sample);
         // if the whole packet is bad, or BOXFAILSAFE switch is actioned, consider all channels bad
         if (thisChannelValid) {

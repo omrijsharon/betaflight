@@ -85,3 +85,12 @@ void accUpdate(timeUs_t currentTimeUs)
 }
 
 #endif
+
+float calcGForce(void)
+{
+    float gForce = 0.0f;
+    for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+        gForce += acc.accADC[axis] * acc.accADC[axis];;
+    }
+    return sqrtf(gForce) * acc.dev.acc_1G_rec;
+}

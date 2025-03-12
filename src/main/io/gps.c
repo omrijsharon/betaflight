@@ -1342,6 +1342,16 @@ void gpsUpdate(timeUs_t currentTimeUs)
     gpsState_e gpsCurrentState = gpsData.state;
     gpsData.now = millis();
 
+    // use DEBUG_SET(DEBUG_GPS_HOME, <index>, GPS_home[GPS_LATITUDE]); to debug home position. but remember that int16_t debug[DEBUG16_VALUE_COUNT];
+    // so we will need to send each value in two parts, eg. DEBUG_SET(DEBUG_GPS_HOME, 0, GPS_home[GPS_LATITUDE] & 0xFFFF); DEBUG_SET(DEBUG_GPS_HOME, 1, GPS_home[GPS_LATITUDE] >> 16);
+    DEBUG_SET(DEBUG_GPS_HOME, 0, GPS_home[GPS_LATITUDE] & 0xFFFF);
+    DEBUG_SET(DEBUG_GPS_HOME, 1, GPS_home[GPS_LATITUDE] >> 16);
+    DEBUG_SET(DEBUG_GPS_HOME, 2, GPS_home[GPS_LONGITUDE] & 0xFFFF);
+    DEBUG_SET(DEBUG_GPS_HOME, 3, GPS_home[GPS_LONGITUDE] >> 16);
+    // this way we send the 2 parts of the value to the debug buffer, and the debug buffer will be able to display the value correctly
+    // for instance, the latitude 32.1234567 which is presented in uint32 as 321234567 will be displayed in 
+    // GPS_home[GPS_LATITUDE] & 0xFFFF = 0x7B00
+
     if (gpsPort) {
         DEBUG_SET(DEBUG_GPS_CONNECTION, 7, serialRxBytesWaiting(gpsPort));
         static uint8_t wait = 0;

@@ -3669,6 +3669,15 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
         gpsSol.groundSpeed = sbufReadU16(src);
         GPS_update |= GPS_MSP_UPDATE;        // MSP data signalisation to GPS functions
         break;
+
+    case MSP_WP:
+    // here we receive gps coordinates of gps_home and write them to GPS_home[GPS_LATITUDE] = gpsSol.llh.lat; GPS_home[GPS_LONGITUDE] = gpsSol.llh.lon;
+    // where int32_t GPS_home[2]; we will use sbufReadU32(src) to read the data. we want to read the data from the user and put it in the GPS_home array
+        GPS_home[GPS_LATITUDE] = (int32_t)sbufReadU32(src);
+        GPS_home[GPS_LONGITUDE] = (int32_t)sbufReadU32(src);
+        ENABLE_STATE(GPS_FIX_HOME);
+        break;
+        
 #endif // USE_GPS
     case MSP_SET_FEATURE_CONFIG:
         featureConfigReplace(sbufReadU32(src));

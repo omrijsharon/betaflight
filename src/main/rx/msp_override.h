@@ -24,4 +24,4 @@
 #include "pg/rx.h"
 
 uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rxConfig_t *rxConfig, uint8_t chan);
-
+bool isMspOverrideControllingSticks(void);

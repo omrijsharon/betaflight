@@ -103,6 +103,7 @@ const char * const debugModeNames[DEBUG_COUNT] = {
     "GPS_RESCUE_HEADING",
     "GPS_RESCUE_TRACKING",
     "GPS_CONNECTION",
+    "GPS_HOME",
     "ATTITUDE",
     "VTX_MSP",
     "GPS_DOP",
@@ -117,4 +118,6 @@ const char * const debugModeNames[DEBUG_COUNT] = {
     "MAG_CALIB",
     "MAG_TASK_RATE",
     "EZLANDING",
+    "RX_RAW",
+    "MAG_ERROR",
 };

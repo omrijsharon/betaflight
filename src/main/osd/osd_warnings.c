@@ -63,6 +63,7 @@
 #include "sensors/adcinternal.h"
 #include "sensors/battery.h"
 #include "sensors/sensors.h"
+#include "sensors/barometer.h"
 
 const char CRASH_FLIP_WARNING[] = "> CRASH FLIP <";
 
@@ -110,6 +111,44 @@ void renderOsdWarning(char *warningText, bool *blinking, uint8_t *displayAttr)
         } else {
             armingDisabledUpdateTimeUs = 0;
         }
+    }
+
+#if defined(USE_ACC)
+    if (IS_RC_MODE_ACTIVE(BOXFREEFALLARM && !ARMING_FLAG(ARMED))){ // if freefallarm is active and not armed
+        if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
+            tfp_sprintf(warningText, "FREEFALL AUTOARM");
+            *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+            return;
+        }
+    }
+#endif
+
+#ifdef USE_BARO
+    if (IS_RC_MODE_ACTIVE(BOXALTARM) && !ARMING_FLAG(ARMED)){ // if altarm is active and not armed
+        int altitudePercentage = MAX(0, (int)(100 * baro.altitude / (100.0f*barometerConfig()->baro_arm_altitude_meters)));
+        tfp_sprintf(warningText, "ALTARM %dM %d%%", barometerConfig()->baro_arm_altitude_meters, altitudePercentage);
+        *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+        return;
+    }
+#endif // USE_BARO
+
+    if (FLIGHT_MODE(MAG_MODE) && ARMING_FLAG(ARMED)){ // if altarm is active and not armed
+        int16_t dif = DECIDEGREES_TO_DEGREES(attitude.values.yaw) - magHold;
+        if (dif <= -180)
+            dif += 360;
+        if (dif >= +180)
+            dif -= 360;
+        int8_t headingPercentage = MAX(0, (int8_t)(100.0f - 100.0f * abs(dif) / 180.0f));
+        // if headingPercentage is more than 1% then display the warning
+        if (headingPercentage < 100) {
+            tfp_sprintf(warningText, "HELIDROP HEADING %d%%", headingPercentage);
+            *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+            return;
+        } else {
+            tfp_sprintf(warningText, "HELIDROP HEADING MODE");
+            *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+            return;
+	}
     }
 
 #ifdef USE_DSHOT

@@ -44,6 +44,7 @@
 #include "io/beeper.h"
 
 #include "rx/rx.h"
+#include "rx/msp_override.h"
 
 #include "flight/pid.h"
 
@@ -211,6 +212,13 @@ void failsafeOnValidDataFailed(void)
 void failsafeCheckDataFailurePeriod(void)
 // runs directly from scheduler, every 10ms, to validate the link
 {
+    // If MSP override controls the main sticks, do NOT progress to stage 2.
+    #if defined(USE_RX_MSP_OVERRIDE)
+    if (isMspOverrideControllingSticks()) {
+        // MSP override is controlling sticks, so we don't need to check for signal loss
+        return;
+    }
+    #endif
     if (cmp32(millis(), failsafeState.validRxDataReceivedAt) > (int32_t)failsafeState.rxDataFailurePeriod) {
         // sets link DOWN after the stage 1 failsafe period, initiating stage 2
         failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;

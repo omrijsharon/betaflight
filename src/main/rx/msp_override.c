@@ -42,4 +42,28 @@ uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rx
         return rxSample;
     }
 }
+
+
+bool isMspOverrideControllingSticks(void)
+{
+    // Is the MSP override box active?
+    if (!IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE)) {
+        return false;
+    }
+
+    // For channels 0..3 (ROLL, PITCH, YAW, THROTTLE),
+    // check if each one is included in msp_override_channels_mask.
+    // i.e., if bits 0..3 of msp_override_channels_mask are set for each channel that we consider "controlled."
+    // If you only require "any" of them to be overridden, adjust logic as desired.
+
+    // Example: require *all* 4 sticks to be overridden
+    const uint8_t stickMask = 0x0F;  // binary 1111, for channels 0..3
+    uint8_t overrideMask = rxConfig()->msp_override_channels_mask & stickMask;
+
+    // if overrideMask == 0x0F, that means channels 0..3 are all included
+    // if partial override is enough for you, tweak this check.
+    return (overrideMask == stickMask);
+}
+
 #endif
+
