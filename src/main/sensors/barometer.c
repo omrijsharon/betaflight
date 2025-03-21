@@ -76,7 +76,6 @@ void pgResetFn_barometerConfig(barometerConfig_t *barometerConfig)
 {
     barometerConfig->baro_hardware = DEFAULT_BARO_DEVICE;
     barometerConfig->baro_arm_altitude_meters = 0;
-    barometerConfig->baro_arm_throttle = 1000;
     // For backward compatibility; ceate a valid default value for bus parameters
     //
     // 1. If DEFAULT_BARO_xxx is defined, use it.

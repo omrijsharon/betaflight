@@ -1399,6 +1399,31 @@ case MSP_NAME:
         }
         break;
 
+    case MSP_RAW_RX: // here we output a "frame" containing the euler angles, the first 4 debug values, the RC channels.
+        for (int i = 0; i < NON_AUX_CHANNEL_COUNT; i++) {
+            sbufWriteU16(dst, rcRawBeforeOverride[i]);
+        }
+        break;
+        
+    case MSP_FINALFRAME: // here we output a "frame" containing the acceleration vector, euler angles, the first 4 debug values, the RC channels.
+        for (int i = 0; i < 3; i++) {
+#if defined(USE_ACC)
+            sbufWriteU16(dst, lrintf(acc.accADC[i]));
+#else
+            sbufWriteU16(dst, 0);
+#endif
+        }
+        sbufWriteU16(dst, attitude.values.roll);
+        sbufWriteU16(dst, attitude.values.pitch);
+        sbufWriteU16(dst, DECIDEGREES_TO_DEGREES(attitude.values.yaw));
+        for (int i = 0; i < NON_AUX_CHANNEL_COUNT; i++) {
+            sbufWriteU16(dst, rcRawBeforeOverride[i]);
+        }
+        for (int i = 0; i < rxRuntimeState.channelCount; i++) {
+            sbufWriteU16(dst, rcData[i]);
+        }
+        break;
+
     case MSP_PID_CONTROLLER:
         sbufWriteU8(dst, PID_CONTROLLER_BETAFLIGHT);
         break;

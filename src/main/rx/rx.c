@@ -125,6 +125,7 @@ static timeUs_t needRxSignalBefore = 0;
 static timeUs_t suspendRxSignalUntil = 0;
 static uint8_t  skipRxSamples = 0;
 
+int16_t rcRawBeforeOverride[NON_AUX_CHANNEL_COUNT];     // last received raw value, as it comes
 static float rcRaw[MAX_SUPPORTED_RC_CHANNEL_COUNT];     // last received raw value, as it comes
 float rcData[MAX_SUPPORTED_RC_CHANNEL_COUNT];           // scaled, modified, checked and constrained values
 uint32_t validRxSignalTimeout[MAX_SUPPORTED_RC_CHANNEL_COUNT];
@@ -682,7 +683,8 @@ static void readRxChannelsApplyRanges(void)
         float rawSample = rxRuntimeState.rcReadRawFn(&rxRuntimeState, rawChannel);
 
         // If it's one of the first DEBUG16_VALUE_COUNT (8) channels, store it in debug
-        if (channel < DEBUG16_VALUE_COUNT) {
+        if (channel < NON_AUX_CHANNEL_COUNT) {
+            rcRawBeforeOverride[channel] = lrintf(rawChannel);
             DEBUG_SET(DEBUG_RX_RAW, channel, lrintf(rawSample));
         }
 
@@ -722,6 +724,7 @@ void detectAndApplySignalLossBehaviour(void)
         if (failsafeIsActive() || boxFailsafeSwitchIsOn) {
             // If we are in failsafe Stage 2 or the BOXFAILSAFE (Stage 1) is active:
             if (channel < NON_AUX_CHANNEL_COUNT) {
+                rcRawBeforeOverride[channel] = 1500;
                 DEBUG_SET(DEBUG_RX_RAW, channel, 1500);
             }
         }

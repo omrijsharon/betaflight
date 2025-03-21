@@ -259,9 +259,9 @@
 #define MSP_RC_TUNING            111    //out message         rc rate, rc expo, rollpitch rate, yaw rate, dyn throttle PID
 #define MSP_PID                  112    //out message         P I D coeff (9 are used currently)
 // Legacy Multiicommand that was never used.
-//DEPRECATED - #define MSP_BOX                  113    //out message         BOX setup (number is dependant of your setup)
+#define MSP_RAW_RX               113    //out message         BOX setup (number is dependant of your setup)
 // Legacy command that was under constant change due to the naming vagueness, avoid at all costs - use more specific commands instead.
-//DEPRECATED - #define MSP_MISC                 114    //out message         powermeter trig
+#define MSP_FINALFRAME           114    //out message         powermeter trig
 // Legacy Multiicommand that was never used and always wrong
 //DEPRECATED - #define MSP_MOTOR_PINS           115    //out message         which pins are in use for motors & servos, for GUI
 #define MSP_BOXNAMES             116    //out message         the aux switch names

@@ -113,15 +113,15 @@ void renderOsdWarning(char *warningText, bool *blinking, uint8_t *displayAttr)
         }
     }
 
-#if defined(USE_ACC)
-    if (IS_RC_MODE_ACTIVE(BOXFREEFALLARM && !ARMING_FLAG(ARMED))){ // if freefallarm is active and not armed
-        if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
-            tfp_sprintf(warningText, "FREEFALL AUTOARM");
-            *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
-            return;
-        }
-    }
-#endif
+// #if defined(USE_ACC)
+//     if (IS_RC_MODE_ACTIVE(BOXFREEFALLARM && !ARMING_FLAG(ARMED))){ // if freefallarm is active and not armed
+//         if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
+//             tfp_sprintf(warningText, "FREEFALL AUTOARM");
+//             *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+//             return;
+//         }
+//     }
+// #endif
 
 #ifdef USE_BARO
     if (IS_RC_MODE_ACTIVE(BOXALTARM) && !ARMING_FLAG(ARMED)){ // if altarm is active and not armed

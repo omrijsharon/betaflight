@@ -26,3 +26,5 @@
 
 bool lidarTFminiDetect(rangefinderDev_t *dev);
 bool lidarTF02Detect(rangefinderDev_t *dev);
+bool lidarTFminiSDetect(rangefinderDev_t *dev); // Added for TFmini-S support
+

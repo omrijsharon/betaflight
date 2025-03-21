@@ -67,6 +67,10 @@
 
 PG_REGISTER_ARRAY(adjustmentRange_t, MAX_ADJUSTMENT_RANGE_COUNT, adjustmentRanges, PG_ADJUSTMENT_RANGE_CONFIG, 2);
 
+#if defined(USE_OSD)
+static displayPort_t *osdDisplayPort;
+#endif
+
 uint8_t pidAudioPositionToModeMap[7] = {
     // on a pot with a center detent, it's easy to have center area for off/default, then three positions to the left and three to the right.
     // current implementation yields RC values as below.
@@ -226,7 +230,15 @@ static const adjustmentConfig_t defaultAdjustmentConfigs[ADJUSTMENT_FUNCTION_COU
         .adjustmentFunction = ADJUSTMENT_LED_PROFILE,
         .mode = ADJUSTMENT_MODE_SELECT,
         .data = { .switchPositions = 3 }
-    }
+    }, {
+        .adjustmentFunction = ADJUSTMENT_PILOT_NAME_X,
+        .mode = ADJUSTMENT_MODE_SELECT,
+        .data = { .switchPositions = 255 }
+    }, {
+        .adjustmentFunction = ADJUSTMENT_PILOT_NAME_Y,
+        .mode = ADJUSTMENT_MODE_SELECT,
+        .data = { .switchPositions = 255 }
+    },
 };
 
 #if defined(USE_OSD) && defined(USE_OSD_ADJUSTMENTS)
@@ -264,6 +276,8 @@ static const char * const adjustmentLabels[] = {
     "ROLL F",
     "YAW F",
     "OSD PROFILE",
+    "PILOT NAME X",
+    "PILOT NAME Y",
 };
 
 static int adjustmentRangeNameIndex = 0;
@@ -634,6 +648,20 @@ static uint8_t applySelectAdjustment(adjustmentFunction_e adjustmentFunction, ui
         if (getCurrentOsdProfileIndex() != (position + 1)) {
             changeOsdProfileIndex(position+1);
         }
+#endif
+        break;
+    case ADJUSTMENT_PILOT_NAME_X:
+#if defined(USE_OSD)
+#ifdef USE_OSD_PROFILES
+    osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_X((uint8_t)((position * osdDisplayPort->rows) / 255));
+#endif
+#endif
+        break;
+    case ADJUSTMENT_PILOT_NAME_Y:
+#if defined(USE_OSD)
+#ifdef USE_OSD_PROFILES
+        osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_Y((uint8_t)((position * osdDisplayPort->cols) / 255));
+#endif
 #endif
         break;
     case ADJUSTMENT_LED_PROFILE:

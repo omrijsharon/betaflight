@@ -48,7 +48,6 @@ typedef struct barometerConfig_s {
     ioTag_t baro_eoc_tag;
     ioTag_t baro_xclr_tag;
     int16_t baro_arm_altitude_meters;
-    uint16_t baro_arm_throttle;
 } barometerConfig_t;
 
 PG_DECLARE(barometerConfig_t, barometerConfig);

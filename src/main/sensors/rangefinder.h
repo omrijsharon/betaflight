@@ -31,6 +31,7 @@ typedef enum {
     RANGEFINDER_HCSR04      = 1,
     RANGEFINDER_TFMINI      = 2,
     RANGEFINDER_TF02        = 3,
+    RANGEFINDER_TFMINI_S    = 4,  // Added TFmini-S support
 } rangefinderType_e;
 
 typedef struct rangefinderConfig_s {

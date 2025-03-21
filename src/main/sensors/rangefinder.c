@@ -125,6 +125,14 @@ static bool rangefinderDetect(rangefinderDev_t * dev, uint8_t rangefinderHardwar
             }
 #endif
             break;
+            case RANGEFINDER_TFMINI_S:
+#if defined(USE_RANGEFINDER_TF)
+            if (lidarTFminiSDetect(dev)) {
+                rangefinderHardware = RANGEFINDER_TFMINI_S;
+                rescheduleTask(TASK_RANGEFINDER, TASK_PERIOD_MS(RANGEFINDER_TF_TASK_PERIOD_MS));
+            }
+#endif
+            break;
 
         case RANGEFINDER_NONE:
             rangefinderHardware = RANGEFINDER_NONE;

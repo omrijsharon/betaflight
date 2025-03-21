@@ -163,7 +163,7 @@ static bool runawayTakeoffTemporarilyDisabled = false;
 
 static bool isShouldUserControlThrottle = false;
 static bool isAutoArm = false;
-static timeUs_t autoArmTimeUs = 0;
+// static timeUs_t autoArmTimeUs = 0;
 
 #ifdef USE_LAUNCH_CONTROL
 static launchControlState_e launchControlState = LAUNCH_CONTROL_DISABLED;
@@ -494,20 +494,21 @@ void tryArm(void)
         gyroStartCalibration(true);
     }
 
-#if defined(USE_ACC)
-    if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
-        autoArmTimeUs = 0;
-        return;
-    } else {
-        if (autoArmTimeUs==0) {
-            autoArmTimeUs = micros();
-        } else if (cmpTimeUs(micros(), autoArmTimeUs) < (timeDelta_t)(accelerometerConfig()->auto_arm_delay_sec) * 1e6) {
-            return;
-        }
-        isAutoArm = true;
-    }
-
-#endif
+// #if defined(USE_ACC)
+//     if (IS_RC_MODE_ACTIVE(BOXFREEFALLARM)) {
+//         if ((uint8_t)(100.0f * calcGForce()) > accelerometerConfig()->auto_arm_freefall_gforce) {
+//             autoArmTimeUs = 0;
+//             return;
+//         } else {
+//             if (autoArmTimeUs==0) {
+//                 autoArmTimeUs = micros();
+//             } else if (cmpTimeUs(micros(), autoArmTimeUs) < (timeDelta_t)(accelerometerConfig()->auto_arm_delay_sec) * 1e6) {
+//                 return;
+//             }
+//             isAutoArm = true;
+//         }
+//     }
+// #endif
 #ifdef USE_BARO
     if (barometerConfig()->baro_arm_altitude_meters != 0 && IS_RC_MODE_ACTIVE(BOXALTARM)) {
         if (!isBaroAltitudeCheck()) { // if baro altitude check is enabled, don't arm until it's ready
@@ -521,9 +522,9 @@ void tryArm(void)
         if (!ARMING_FLAG(ARMED)) {
             rcData[THROTTLE] = 1000;
         } else if (!isShouldUserControlThrottle) {
-            if (rcData[THROTTLE] > barometerConfig()->baro_arm_throttle) {
-                // If the throttle is above the baro arm throttle, set it to the baro arm throttle
-                rcData[THROTTLE] = barometerConfig()->baro_arm_throttle;
+            if (rcData[THROTTLE] > failsafeConfig()->failsafe_throttle) {
+                // If the throttle is above the failsafe throttle, set it to the failsafe throttle
+                rcData[THROTTLE] = failsafeConfig()->failsafe_throttle;
             } else {
                 isShouldUserControlThrottle = true;
             }

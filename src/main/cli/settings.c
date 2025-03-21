@@ -162,7 +162,7 @@ const char * const lookupTableMagHardware[] = {
 #endif
 #if defined(USE_SENSOR_NAMES) || defined(USE_RANGEFINDER)
 const char * const lookupTableRangefinderHardware[] = {
-    "NONE", "HCSR04", "TFMINI", "TF02"
+    "NONE", "HCSR04", "TFMINI", "TF02", "TFMINI_S",
 };
 #endif
 
@@ -711,8 +711,8 @@ const clivalue_t valueTable[] = {
     { "acc_high_range",             VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, acc_high_fsr) },
 #endif
     { PARAM_NAME_ACC_LPF_HZ,        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, acc_lpf_hz) },
-    { "auto_arm_freefall_gforce",   VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 100 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_freefall_gforce) },    
-    { "auto_arm_delay_sec",         VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 10 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_delay_sec) },    
+    // { "auto_arm_freefall_gforce",   VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 100 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_freefall_gforce) },    
+    // { "auto_arm_delay_sec",         VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 10 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_delay_sec) },    
     { "acc_trim_pitch",             VAR_INT16  | MASTER_VALUE, .config.minmax = { -300, 300 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, accelerometerTrims.values.pitch) },
     { "acc_trim_roll",              VAR_INT16  | MASTER_VALUE, .config.minmax = { -300, 300 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, accelerometerTrims.values.roll) },
 
@@ -743,8 +743,6 @@ const clivalue_t valueTable[] = {
     { "baro_arm_altitude_meters",   VAR_INT16  | MASTER_VALUE, .config.minmax = { -1000, 1000 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_arm_altitude_meters) },
     { PARAM_NAME_BARO_HARDWARE,     VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_BARO_HARDWARE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_hardware) },
 #endif
-    { "auto_arm_throttle",          VAR_UINT16 | MASTER_VALUE, .config.minmax = { 1000, 2000 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_arm_throttle) },
-
 // PG_RX_CONFIG
     { "mid_rc",                     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1200, 1700 }, PG_RX_CONFIG, offsetof(rxConfig_t, midrc) },
     { "min_check",                  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { PWM_PULSE_MIN, PWM_PULSE_MAX }, PG_RX_CONFIG, offsetof(rxConfig_t, mincheck) },
