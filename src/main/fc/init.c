@@ -823,7 +823,13 @@ void init(void)
         accStartCalibration();
     }
 #endif
-    gyroStartCalibration(false);
+    if (armingConfig()->gyro_cal_on_init) {
+        gyroStartCalibration(false);
+    } // if not calibrated on boot, get the gyroZero saved in the EEPROM
+    else {
+        gyroSetZero(&gyro.gyroSensor1, &gyroConfig()->gyroZero);
+    }
+    
 #ifdef USE_BARO
     baroStartCalibration();
 #endif

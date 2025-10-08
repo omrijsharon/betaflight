@@ -58,6 +58,8 @@
 #include "sensors/boardalignment.h"
 #include "sensors/gyro.h"
 #include "sensors/gyro_init.h"
+#include "sensors/sensors.h"
+
 
 #if ((TARGET_FLASH_SIZE > 128) && (defined(USE_GYRO_SPI_ICM20601) || defined(USE_GYRO_SPI_ICM20689) || defined(USE_GYRO_SPI_MPU6500)))
 #define USE_GYRO_SLEW_LIMITER
@@ -131,6 +133,10 @@ void pgResetFn_gyroConfig(gyroConfig_t *gyroConfig)
     gyroConfig->gyro_lpf1_dyn_expo = 5;
     gyroConfig->simplified_gyro_filter = true;
     gyroConfig->simplified_gyro_filter_multiplier = SIMPLIFIED_TUNING_DEFAULT;
+    gyroConfig->gyroZero.values.roll = 0;
+    gyroConfig->gyroZero.values.pitch = 0;
+    gyroConfig->gyroZero.values.yaw = 0;
+    gyroConfig->gyroZero.values.calibrationCompleted = 0;
 }
 
 bool isGyroSensorCalibrationComplete(const gyroSensor_t *gyroSensor)
@@ -203,6 +209,27 @@ bool isFirstArmingGyroCalibrationRunning(void)
     return firstArmingCalibrationWasStarted && !gyroIsCalibrationComplete();
 }
 
+void gyroSetZero(gyroSensor_t *gyroSensor, const flightDynamicsTrims_t *gyroZero)
+{
+    if (gyroZero->values.calibrationCompleted) {
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            // since gyroConfigMutable()->gyroZero.values is using axes names and gyroSensor->gyroDev.gyroZero uses indices,
+            // we need to convert the values to the right order, using switch case
+            switch (axis) {
+                case X:
+                    gyroSensor->gyroDev.gyroZero[axis] = (float)gyroZero->values.roll;
+                    break;
+                case Y:
+                    gyroSensor->gyroDev.gyroZero[axis] = (float)gyroZero->values.pitch;
+                    break;
+                case Z:
+                    gyroSensor->gyroDev.gyroZero[axis] = (float)gyroZero->values.yaw;
+                    break;
+            }
+        }
+    }
+}
+
 STATIC_UNIT_TESTED NOINLINE void performGyroCalibration(gyroSensor_t *gyroSensor, uint8_t gyroMovementCalibrationThreshold)
 {
     bool calFailed = false;
@@ -238,6 +265,19 @@ STATIC_UNIT_TESTED NOINLINE void performGyroCalibration(gyroSensor_t *gyroSensor
                 gyroSensor->gyroDev.gyroZero[axis] = gyroSensor->calibration.sum[axis] / gyroCalculateCalibratingCycles();
                 if (axis == Z) {
                   gyroSensor->gyroDev.gyroZero[axis] -= ((float)gyroConfig()->gyro_offset_yaw / 100);
+                }
+                // since gyroConfigMutable()->gyroZero.values is using axes names and gyroSensor->gyroDev.gyroZero uses indices,
+                // we need to convert the values to the right order, using switch case
+                switch (axis) {
+                    case X:
+                        gyroConfigMutable()->gyroZero.values.roll = lrintf(gyroSensor->gyroDev.gyroZero[axis]);
+                        break;
+                    case Y:
+                        gyroConfigMutable()->gyroZero.values.pitch = lrintf(gyroSensor->gyroDev.gyroZero[axis]);
+                        break;
+                    case Z:
+                        gyroConfigMutable()->gyroZero.values.yaw = lrintf(gyroSensor->gyroDev.gyroZero[axis]);
+                        break;
                 }
             }
         }
@@ -671,3 +711,5 @@ void initYawSpinRecovery(int maxYawRate)
     yawSpinRecoveryThreshold = threshold;
 }
 #endif
+
+    

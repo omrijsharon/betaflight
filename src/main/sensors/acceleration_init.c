@@ -142,6 +142,8 @@ void pgResetFn_accelerometerConfig(accelerometerConfig_t *instance)
         .acc_lpf_hz = 25, // ATTITUDE/IMU runs at 100Hz (acro) or 500Hz (level modes) so we need to set 50 Hz (or lower) to avoid aliasing
         .acc_hardware = ACC_DEFAULT,
         .acc_high_fsr = false,
+        .auto_arm_freefall_gforce = 60,
+        .auto_arm_delay_sec = 1,        
     );
     resetRollAndPitchTrims(&instance->accelerometerTrims);
     resetFlightDynamicsTrims(&instance->accZero);

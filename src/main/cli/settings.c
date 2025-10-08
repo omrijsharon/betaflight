@@ -711,8 +711,8 @@ const clivalue_t valueTable[] = {
     { "acc_high_range",             VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, acc_high_fsr) },
 #endif
     { PARAM_NAME_ACC_LPF_HZ,        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, acc_lpf_hz) },
-    // { "auto_arm_freefall_gforce",   VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 100 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_freefall_gforce) },    
-    // { "auto_arm_delay_sec",         VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 10 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_delay_sec) },    
+    { "auto_arm_freefall_gforce",   VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 100 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_freefall_gforce) },    
+    { "auto_arm_delay_sec",         VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 10 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, auto_arm_delay_sec) },    
     { "acc_trim_pitch",             VAR_INT16  | MASTER_VALUE, .config.minmax = { -300, 300 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, accelerometerTrims.values.pitch) },
     { "acc_trim_roll",              VAR_INT16  | MASTER_VALUE, .config.minmax = { -300, 300 }, PG_ACCELEROMETER_CONFIG, offsetof(accelerometerConfig_t, accelerometerTrims.values.roll) },
 
@@ -1016,6 +1016,7 @@ const clivalue_t valueTable[] = {
 // PG_ARMING_CONFIG
     { "auto_disarm_delay",          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 60 }, PG_ARMING_CONFIG, offsetof(armingConfig_t, auto_disarm_delay) },
     { PARAM_NAME_GYRO_CAL_ON_FIRST_ARM, VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_ARMING_CONFIG, offsetof(armingConfig_t, gyro_cal_on_first_arm) },
+    { PARAM_NAME_GYRO_CAL_ON_INIT, VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_ARMING_CONFIG, offsetof(armingConfig_t, gyro_cal_on_init) },
 
 // PG_GPS_CONFIG
 #ifdef USE_GPS
@@ -1252,6 +1253,7 @@ const clivalue_t valueTable[] = {
 
     { PARAM_NAME_SIMPLIFIED_GYRO_FILTER,             VAR_UINT8 | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GYRO_CONFIG, offsetof(gyroConfig_t, simplified_gyro_filter) },
     { PARAM_NAME_SIMPLIFIED_GYRO_FILTER_MULTIPLIER,  VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { SIMPLIFIED_TUNING_FILTERS_MIN, SIMPLIFIED_TUNING_MAX }, PG_GYRO_CONFIG, offsetof(gyroConfig_t, simplified_gyro_filter_multiplier) },
+    { "gyro_calibration",                            VAR_INT16  | MASTER_VALUE | MODE_ARRAY, .config.array.length = 4, PG_GYRO_CONFIG, offsetof(gyroConfig_t, gyroZero.raw) },
 #endif
 #ifdef USE_TPA_MODE
     { PARAM_NAME_TPA_MODE,             VAR_UINT8  | PROFILE_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_TPA_MODE }, PG_PID_PROFILE, offsetof(pidProfile_t, tpa_mode) },

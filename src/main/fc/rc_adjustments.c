@@ -67,9 +67,9 @@
 
 PG_REGISTER_ARRAY(adjustmentRange_t, MAX_ADJUSTMENT_RANGE_COUNT, adjustmentRanges, PG_ADJUSTMENT_RANGE_CONFIG, 2);
 
-#if defined(USE_OSD)
-static displayPort_t *osdDisplayPort;
-#endif
+// #if defined(USE_OSD)
+// static displayPort_t *osdDisplayPort;
+// #endif
 
 uint8_t pidAudioPositionToModeMap[7] = {
     // on a pot with a center detent, it's easy to have center area for off/default, then three positions to the left and three to the right.
@@ -653,14 +653,14 @@ static uint8_t applySelectAdjustment(adjustmentFunction_e adjustmentFunction, ui
     case ADJUSTMENT_PILOT_NAME_X:
 #if defined(USE_OSD)
 #ifdef USE_OSD_PROFILES
-    osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_X((uint8_t)((position * osdDisplayPort->rows) / 255));
+        osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_POS((uint8_t)(-1 + position*1.0f / 255.0f * (1.0f*osdConfig()->canvas_cols - 1.0f)), OSD_Y(osdElementConfig()->item_pos[OSD_PILOT_NAME])) | OSD_PROFILE_1_FLAG;
 #endif
 #endif
         break;
     case ADJUSTMENT_PILOT_NAME_Y:
 #if defined(USE_OSD)
 #ifdef USE_OSD_PROFILES
-        osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_Y((uint8_t)((position * osdDisplayPort->cols) / 255));
+        osdElementConfigMutable()->item_pos[OSD_PILOT_NAME] = OSD_POS(OSD_X(osdElementConfig()->item_pos[OSD_PILOT_NAME]), (uint8_t)(-1 + position*1.0f / 255.0f * (1.0f*osdConfig()->canvas_rows - 1.0f))) | OSD_PROFILE_1_FLAG;
 #endif
 #endif
         break;

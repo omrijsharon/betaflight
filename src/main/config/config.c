@@ -310,7 +310,11 @@ static void validateAndFixConfig(void)
 #if defined(USE_MULTI_GYRO)
     buildAlignmentFromStandardAlignment(&gyroDeviceConfigMutable(1)->customAlignment, gyroDeviceConfig(1)->alignment);
 #endif
-
+    if (gyroConfig()->gyroZero.values.roll != 0 ||
+        gyroConfig()->gyroZero.values.pitch != 0 ||
+        gyroConfig()->gyroZero.values.yaw != 0) {
+        gyroConfigMutable()->gyroZero.values.calibrationCompleted = 1;
+    }
 #ifdef USE_ACC
     if (accelerometerConfig()->accZero.values.roll != 0 ||
         accelerometerConfig()->accZero.values.pitch != 0 ||

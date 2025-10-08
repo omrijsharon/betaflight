@@ -77,8 +77,8 @@ typedef struct accelerometerConfig_s {
     bool acc_high_fsr;
     flightDynamicsTrims_t accZero;
     rollAndPitchTrims_t accelerometerTrims;
-    // uint8_t auto_arm_freefall_gforce;       // G-force threshold for auto disarm on freefall
-    // uint8_t auto_arm_delay_sec;            // Delay in seconds for auto arm
+    uint8_t auto_arm_freefall_gforce;       // G-force threshold for auto disarm on freefall
+    uint8_t auto_arm_delay_sec;            // Delay in seconds for auto arm
 } accelerometerConfig_t;
 
 PG_DECLARE(accelerometerConfig_t, accelerometerConfig);

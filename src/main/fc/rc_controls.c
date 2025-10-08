@@ -86,6 +86,7 @@ PG_REGISTER_WITH_RESET_TEMPLATE(armingConfig_t, armingConfig, PG_ARMING_CONFIG, 
 
 PG_RESET_TEMPLATE(armingConfig_t, armingConfig,
     .gyro_cal_on_first_arm = 0,
+    .gyro_cal_on_init = 1, // Enable gyro calibration on init by default
     .auto_disarm_delay = 5
 );
 

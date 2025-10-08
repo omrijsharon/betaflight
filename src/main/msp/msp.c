@@ -1399,13 +1399,13 @@ case MSP_NAME:
         }
         break;
 
-    case MSP_RAW_RX: // here we output a "frame" containing the euler angles, the first 4 debug values, the RC channels.
+    case MSP_RAW_RX:
         for (int i = 0; i < NON_AUX_CHANNEL_COUNT; i++) {
             sbufWriteU16(dst, rcRawBeforeOverride[i]);
         }
         break;
         
-    case MSP_FINALFRAME: // here we output a "frame" containing the acceleration vector, euler angles, the first 4 debug values, the RC channels.
+    case MSP_FINALFRAME: // here we output a "frame" containing the acceleration vector, euler angles, the before msp override stick values, the RC channels.
         for (int i = 0; i < 3; i++) {
 #if defined(USE_ACC)
             sbufWriteU16(dst, lrintf(acc.accADC[i]));
@@ -3308,8 +3308,10 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 
 #ifdef USE_ACC
     case MSP_ACC_CALIBRATION:
-        if (!ARMING_FLAG(ARMED))
+        if (!ARMING_FLAG(ARMED)){
             accStartCalibration();
+            gyroStartCalibration(false);
+        }
         break;
 #endif
 

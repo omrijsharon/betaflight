@@ -33,6 +33,8 @@
 #include "flight/dyn_notch_filter.h"
 #endif
 
+#include "sensors/sensors.h"
+
 #include "flight/pid.h"
 
 #include "pg/pg.h"
@@ -198,6 +200,8 @@ typedef struct gyroConfig_s {
     uint8_t gyro_lpf1_dyn_expo; // set the curve for dynamic gyro lowpass filter
     uint8_t simplified_gyro_filter;
     uint8_t simplified_gyro_filter_multiplier;
+
+    flightDynamicsTrims_t gyroZero; // Gyro zero trims, used for gyro calibration
 } gyroConfig_t;
 
 PG_DECLARE(gyroConfig_t, gyroConfig);
@@ -220,3 +224,4 @@ void dynLpfGyroUpdate(float throttle);
 #ifdef USE_YAW_SPIN_RECOVERY
 void initYawSpinRecovery(int maxYawRate);
 #endif
+void gyroSetZero(gyroSensor_t *gyroSensor, const flightDynamicsTrims_t *gyroZero);

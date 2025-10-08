@@ -51,6 +51,8 @@
 #include "sensors/barometer.h"
 #include "sensors/gyro.h"
 
+#include "fc/rc_controls.h"
+
 #include "cms_menu_firmware.h"
 
 
@@ -93,7 +95,12 @@ static const void *cmsCalibrateGyro(displayPort_t *pDisp, const void *self)
     UNUSED(self);
 
     if (sensors(SENSOR_GYRO)) {
-        gyroStartCalibration(false);
+        if (armingConfig()->gyro_cal_on_init) {
+            gyroStartCalibration(false);
+        } // if not calibrated on boot, get the gyroZero saved in the EEPROM
+        else {
+            gyroSetZero(&gyro.gyroSensor1, &gyroConfig()->gyroZero);
+        }
     }
 
     return NULL;

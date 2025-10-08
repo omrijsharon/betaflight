@@ -684,7 +684,7 @@ static void readRxChannelsApplyRanges(void)
 
         // If it's one of the first DEBUG16_VALUE_COUNT (8) channels, store it in debug
         if (channel < NON_AUX_CHANNEL_COUNT) {
-            rcRawBeforeOverride[channel] = lrintf(rawChannel);
+            rcRawBeforeOverride[channel] = lrintf(rawSample);
             DEBUG_SET(DEBUG_RX_RAW, channel, lrintf(rawSample));
         }
 
