@@ -1550,9 +1550,15 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALTITUDE_D_LPF, "%d",       positionConfig()->altitude_d_lpf);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_QV_CENTI, "%d",           positionConfig()->ekf_qv_centi);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_QBA_CENTI, "%d",          positionConfig()->ekf_qba_centi);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_QBB_CENTI, "%d",          positionConfig()->ekf_qbb_centi);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_R_CENTI, "%d",            positionConfig()->ekf_r_centi);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_GATE_SIGMA_X10, "%d",     positionConfig()->ekf_gate_sigma_x10);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_ENABLE_ADAPT_R, "%d",     positionConfig()->ekf_enable_adapt_r);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KZ_X100, "%d",       positionConfig()->alt_hold_kz_x100);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KPV, "%d",           positionConfig()->alt_hold_kpv);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KIV, "%d",           positionConfig()->alt_hold_kiv);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VMAX_CMS, "%d",      positionConfig()->alt_hold_vmax_cms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VSTICK_CMS, "%d",    positionConfig()->alt_hold_vstick_cms);
 
 
 #ifdef USE_MAG

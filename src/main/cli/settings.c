@@ -1778,9 +1778,16 @@ const clivalue_t valueTable[] = {
     // EKF tuning (centi-scaled / x10 where noted)
     { "ekf_qv_centi",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 300 },  PG_POSITION, offsetof(positionConfig_t, ekf_qv_centi) },         // (Qv = (val/100)^2)
     { "ekf_qba_centi",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1,  50 },  PG_POSITION, offsetof(positionConfig_t, ekf_qba_centi) },        // (Qba per sec = (val/100)^2)
+    { "ekf_qbb_centi",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1, 100 },  PG_POSITION, offsetof(positionConfig_t, ekf_qbb_centi) },        // (Qbb per sec = (val/100)^2)
     { "ekf_r_centi",             VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 100 },  PG_POSITION, offsetof(positionConfig_t, ekf_r_centi) },           // (R = (val/100)^2)
     { "ekf_gate_sigma_x10",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10,  50 },  PG_POSITION, offsetof(positionConfig_t, ekf_gate_sigma_x10) },    // sigma = val/10
     { "ekf_enable_adapt_r",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  0,   1 },  PG_POSITION, offsetof(positionConfig_t, ekf_enable_adapt_r) },
+    // Altitude hold tuning (BARO_MODE)
+    { "alt_hold_kz_x100",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1, 300 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kz_x100) },       // kz = val/100 [1/s]
+    { "alt_hold_kpv",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  0, 800 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kpv) },
+    { "alt_hold_kiv",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  0, 400 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kiv) },
+    { "alt_hold_vmax_cms",       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 600 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_vmax_cms) },
+    { "alt_hold_vstick_cms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 600 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_vstick_cms) },
 
 // PG_MODE_ACTIVATION_CONFIG
 #if defined(USE_CUSTOM_BOX_NAMES)
