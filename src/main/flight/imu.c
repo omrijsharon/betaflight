@@ -45,6 +45,7 @@
 #include "flight/mixer.h"
 #include "flight/pid.h"
 #include "fc/rc.h"
+#include "fc/rc_modes.h"
 
 #include "io/gps.h"
 
@@ -269,9 +270,13 @@ STATIC_UNIT_TESTED void imuMahonyAHRSupdate(float dt,
     }
 
     // Apply proportional and integral feedback
-    gx += dcmKpGain * ex + integralFBx;
-    gy += dcmKpGain * ey + integralFBy;
-    gz += dcmKpGain * ez + integralFBz;
+    float dcmEffectiveKpGain = dcmKpGain;
+    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE)) {
+        dcmEffectiveKpGain /= 10.0f;
+    }
+    gx += dcmEffectiveKpGain * ex + integralFBx;
+    gy += dcmEffectiveKpGain * ey + integralFBy;
+    gz += dcmEffectiveKpGain * ez + integralFBz;
 
     // Integrate rate of change of quaternion
     gx *= (0.5f * dt);

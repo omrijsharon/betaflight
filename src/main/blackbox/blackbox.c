@@ -1548,6 +1548,12 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALTITUDE_PREFER_BARO, "%d", positionConfig()->altitude_prefer_baro);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALTITUDE_LPF, "%d",         positionConfig()->altitude_lpf);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALTITUDE_D_LPF, "%d",       positionConfig()->altitude_d_lpf);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_QV_CENTI, "%d",           positionConfig()->ekf_qv_centi);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_QBA_CENTI, "%d",          positionConfig()->ekf_qba_centi);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_R_CENTI, "%d",            positionConfig()->ekf_r_centi);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_GATE_SIGMA_X10, "%d",     positionConfig()->ekf_gate_sigma_x10);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_ENABLE_ADAPT_R, "%d",     positionConfig()->ekf_enable_adapt_r);
+
 
 #ifdef USE_MAG
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_MAG_HARDWARE, "%d",           compassConfig()->mag_hardware);

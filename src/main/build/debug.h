@@ -122,6 +122,7 @@ typedef enum {
     DEBUG_EZLANDING,
     DEBUG_RX_RAW,
     DEBUG_MAG_ERROR,
+    DEBUG_Z_EKF,
     DEBUG_COUNT
 } debugType_e;
 

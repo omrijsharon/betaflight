@@ -1,40 +1,51 @@
-/*
- * This file is part of Cleanflight and Betaflight.
- *
- * Cleanflight and Betaflight are free software. You can redistribute
- * this software and/or modify this software under the terms of the
- * GNU General Public License as published by the Free Software
- * Foundation, either version 3 of the License, or (at your option)
- * any later version.
- *
- * Cleanflight and Betaflight are distributed in the hope that they
- * will be useful, but WITHOUT ANY WARRANTY; without even the implied
- * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- *
- * If not, see <http://www.gnu.org/licenses/>.
- */
-
 #pragma once
 
 #include "common/time.h"
 
 #define TASK_ALTITUDE_RATE_HZ 100
 
+// --- 1D EKF for vertical axis: x = [ z (m), v (m/s), ba (m/s^2) ]
+typedef struct positionAltEKF_s {
+    float z;        // altitude (m)
+    float v;        // vertical velocity (m/s)
+    float ba;       // accel bias (m/s^2)
+
+    float P[3][3];  // covariance
+
+    // process/measurement noises
+    float Qz;       // (m^2)    — usually 0
+    float Qv;       // (m^2/s^2)
+    float Qba;      // (m^2/s^4)
+    float R;        // (m^2)    — baro variance
+
+    // debug taps
+    float aWorldZ;      // input accel in world-Z (m/s^2)
+    float innovZ;       // measurement innovation (m)
+    float r33;          // cos(theta)*cos(phi)
+    uint8_t gateRejected; // 0/1
+} positionAltEKF_t;
+
 typedef struct positionConfig_s {
-    uint8_t altitude_source;
-    uint8_t altitude_prefer_baro;
-    uint16_t altitude_lpf;                // lowpass cutoff (value / 100) Hz for altitude smoothing
-    uint16_t altitude_d_lpf;              // lowpass for (value / 100) Hz for altitude derivative smoothing
+    uint8_t  altitude_source;
+    uint8_t  altitude_prefer_baro;
+    uint16_t altitude_lpf;           // (value / 100) Hz
+    uint16_t altitude_d_lpf;         // (value / 100) Hz
+
+    // --- EKF tunables (scaled for CLI/EEPROM) ---
+    uint16_t ekf_qv_centi;           // Qv = (ekf_qv_centi/100)^2  [ (m/s^2)^2 ]
+    uint16_t ekf_qba_centi;          // Qba = (ekf_qba_centi/100)^2 [ (m/s^2)^2 per sec ]
+    uint16_t ekf_r_centi;            // R = (ekf_r_centi/100)^2     [ m^2 ]
+    uint8_t  ekf_gate_sigma_x10;     // gate sigma = /10 (e.g. 30 -> 3.0σ)
+    uint8_t  ekf_enable_adapt_r;     // 0/1 (optional, future use)
 } positionConfig_t;
 
 PG_DECLARE(positionConfig_t, positionConfig);
 
-void calculateEstimatedAltitude(void);
+// lifecycle
 void positionInit(void);
+void calculateEstimatedAltitude(void);
+
+// public getters (legacy API preserved)
 int32_t getEstimatedAltitudeCm(void);
-float getAltitude(void);
+float   getAltitude(void);
 int16_t getEstimatedVario(void);

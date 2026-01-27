@@ -3702,6 +3702,7 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
     // where int32_t GPS_home[2]; we will use sbufReadU32(src) to read the data. we want to read the data from the user and put it in the GPS_home array
         GPS_home[GPS_LATITUDE] = (int32_t)sbufReadU32(src);
         GPS_home[GPS_LONGITUDE] = (int32_t)sbufReadU32(src);
+        gpsRescueConfigMutable()->returnAltitudeM = sbufReadU16(src);  // altitude in meters
         ENABLE_STATE(GPS_FIX_HOME);
         break;
         

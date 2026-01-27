@@ -33,6 +33,7 @@ typedef enum {
     BOXANGLE,
     BOXHORIZON,
     BOXMAG,
+    BOXBARO,
     BOXHEADFREE,
     BOXPASSTHRU,
     BOXFAILSAFE,

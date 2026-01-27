@@ -1,23 +1,3 @@
-/*
- * This file is part of Cleanflight and Betaflight.
- *
- * Cleanflight and Betaflight are free software. You can redistribute
- * this software and/or modify this software under the terms of the
- * GNU General Public License as published by the Free Software
- * Foundation, either version 3 of the License, or (at your option)
- * any later version.
- *
- * Cleanflight and Betaflight are distributed in the hope that they
- * will be useful, but WITHOUT ANY WARRANTY; without even the implied
- * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- *
- * If not, see <http://www.gnu.org/licenses/>.
- */
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -25,7 +5,6 @@
 #include <limits.h>
 
 #include "platform.h"
-
 #include "build/debug.h"
 
 #include "common/maths.h"
@@ -34,44 +13,34 @@
 #include "fc/runtime_config.h"
 
 #include "flight/position.h"
-#include "flight/imu.h"
+#include "flight/imu.h"             // rMat[3][3]
 #include "flight/pid.h"
-
-#include "io/gps.h"
 
 #include "scheduler/scheduler.h"
 
 #include "sensors/sensors.h"
 #include "sensors/barometer.h"
+#include "sensors/acceleration.h"   // acc.accADC[], acc.dev.acc_1G_rec
 
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
-static float displayAltitudeCm = 0.0f;
-static float zeroedAltitudeCm = 0.0f;
+// ------------------ Local storage ------------------
 
-#if defined(USE_BARO) || defined(USE_GPS)
-static float zeroedAltitudeDerivative = 0.0f;
-#endif
+static float displayAltitudeCm = 0.0f;   // what OSD shows (cm)
+static float zeroedAltitudeCm  = 0.0f;   // relative altitude (cm), legacy interface
 
-static pt2Filter_t altitudeLpf;
-static pt2Filter_t altitudeDerivativeLpf;
 #ifdef USE_VARIO
-static int16_t estimatedVario = 0; // in cm/s
+static int16_t estimatedVario = 0;       // cm/s (from EKF.v, cosmetically filtered)
 #endif
 
-void positionInit(void)
-{
-    const float sampleTimeS = HZ_TO_INTERVAL(TASK_ALTITUDE_RATE_HZ);
+static pt2Filter_t altitudeLpf;          // cosmetic display LPF
+static pt2Filter_t altitudeDerivativeLpf;// cosmetic vario LPF
 
-    const float altitudeCutoffHz = positionConfig()->altitude_lpf / 100.0f;
-    const float altitudeGain = pt2FilterGain(altitudeCutoffHz, sampleTimeS);
-    pt2FilterInit(&altitudeLpf, altitudeGain);
+// EKF instance
+static positionAltEKF_t zEkf;
 
-    const float altitudeDerivativeCutoffHz = positionConfig()->altitude_d_lpf / 100.0f;
-    const float altitudeDerivativeGain = pt2FilterGain(altitudeDerivativeCutoffHz, sampleTimeS);
-    pt2FilterInit(&altitudeDerivativeLpf, altitudeDerivativeGain);
-}
+// ------------------ Config ------------------
 
 typedef enum {
     DEFAULT = 0,
@@ -79,139 +48,296 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 4);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 5);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
-    .altitude_source = DEFAULT,
-    .altitude_prefer_baro = 100, // percentage 'trust' of baro data
-    .altitude_lpf = 300,
-    .altitude_d_lpf = 100,
+    .altitude_source       = DEFAULT,
+    .altitude_prefer_baro  = 100,
+    .altitude_lpf          = 300,   // 3.00 Hz
+    .altitude_d_lpf        = 100,   // 1.00 Hz
+    // EKF defaults (roughly what we hardcoded before):
+    .ekf_qv_centi          = 40,    // -> Qv = (0.60)^2
+    .ekf_qba_centi         = 1,     // -> Qba = (0.02)^2 per sec
+    .ekf_r_centi           = 10,    // -> R = (0.25)^2
+    .ekf_gate_sigma_x10    = 40,    // -> 3.0σ gate
+    .ekf_enable_adapt_r    = 0
 );
+
+// ------------------ EKF helpers ------------------
+
+static inline void ekfInit(positionAltEKF_t *ekf, float z0)
+{
+    ekf->z  = z0;
+    ekf->v  = 0.0f;
+    ekf->ba = 0.0f;
+
+    // initial covariance
+    const float pz0  = 0.10f * 0.10f; // 10 cm std
+    const float pv0  = 0.50f * 0.50f; // 0.5 m/s std
+    const float pba0 = 1.00f * 1.00f; // 1 m/s^2 std
+
+    ekf->P[0][0] = pz0;  ekf->P[0][1] = 0;     ekf->P[0][2] = 0;
+    ekf->P[1][0] = 0;    ekf->P[1][1] = pv0;   ekf->P[1][2] = 0;
+    ekf->P[2][0] = 0;    ekf->P[2][1] = 0;     ekf->P[2][2] = pba0;
+
+        // Pull from CLI-config (centi-scaling)
+    const positionConfig_t *pcfg = positionConfig();
+
+    const float qv   = (pcfg->ekf_qv_centi  / 100.0f);
+    const float qba  = (pcfg->ekf_qba_centi / 100.0f);
+    const float rstd = (pcfg->ekf_r_centi   / 100.0f);
+
+    // noises (tunable)
+    ekf->Qz  = 0.0f;
+    ekf->Qv  = qv  * qv;     // (m/s^2)^2
+    ekf->Qba = qba * qba;    // (m/s^2)^2 per sec
+    ekf->R   = rstd * rstd;  // m^2
+
+    ekf->aWorldZ = 0.0f;
+    ekf->innovZ  = 0.0f;
+    ekf->r33     = 1.0f;
+    ekf->gateRejected = 0;
+}
+
+static inline void ekfPredict(positionAltEKF_t *ekf, float aWorldZ, float dt)
+{
+    // state prediction
+    const float z = ekf->z;
+    const float v = ekf->v;
+    const float ba= ekf->ba;
+
+    ekf->z  = z + v * dt;
+    ekf->v  = v + (aWorldZ - ba) * dt;
+    ekf->ba = ba; // RW in covariance
+
+    // F matrix
+    const float F00 = 1.0f, F01 = dt,   F02 = 0.0f;
+    const float F10 = 0.0f, F11 = 1.0f, F12 = -dt;
+    const float F20 = 0.0f, F21 = 0.0f, F22 = 1.0f;
+
+    // P update: P = F P F^T + Qd (diag approx)
+    float P00 = ekf->P[0][0], P01 = ekf->P[0][1], P02 = ekf->P[0][2];
+    float P10 = ekf->P[1][0], P11 = ekf->P[1][1], P12 = ekf->P[1][2];
+    float P20 = ekf->P[2][0], P21 = ekf->P[2][1], P22 = ekf->P[2][2];
+
+    const float FP00 = F00*P00 + F01*P10 + F02*P20;
+    const float FP01 = F00*P01 + F01*P11 + F02*P21;
+    const float FP02 = F00*P02 + F01*P12 + F02*P22;
+
+    const float FP10 = F10*P00 + F11*P10 + F12*P20;
+    const float FP11 = F10*P01 + F11*P11 + F12*P21;
+    const float FP12 = F10*P02 + F11*P12 + F12*P22;
+
+    const float FP20 = F20*P00 + F21*P10 + F22*P20;
+    const float FP21 = F20*P01 + F21*P11 + F22*P21;
+    const float FP22 = F20*P02 + F21*P12 + F22*P22;
+
+    ekf->P[0][0] = FP00*F00 + FP01*F01 + FP02*F02;
+    ekf->P[0][1] = FP00*F10 + FP01*F11 + FP02*F12;
+    ekf->P[0][2] = FP00*F20 + FP01*F21 + FP02*F22;
+
+    ekf->P[1][0] = FP10*F00 + FP11*F01 + FP12*F02;
+    ekf->P[1][1] = FP10*F10 + FP11*F11 + FP12*F12;
+    ekf->P[1][2] = FP10*F20 + FP11*F21 + FP12*F22;
+
+    ekf->P[2][0] = FP20*F00 + FP21*F01 + FP22*F02;
+    ekf->P[2][1] = FP20*F10 + FP21*F11 + FP22*F12;
+    ekf->P[2][2] = FP20*F20 + FP21*F21 + FP22*F22;
+
+    ekf->P[0][0] += ekf->Qz;
+    ekf->P[1][1] += ekf->Qv * dt;
+    ekf->P[2][2] += ekf->Qba * dt;
+
+    ekf->aWorldZ = aWorldZ;
+}
+
+static inline void ekfUpdateZ(positionAltEKF_t *ekf, float zMeas)
+{
+    // S, K
+    const float P00 = ekf->P[0][0], P01 = ekf->P[0][1], P02 = ekf->P[0][2];
+    const float P10 = ekf->P[1][0], P11 = ekf->P[1][1], P12 = ekf->P[1][2];
+    const float P20 = ekf->P[2][0], P21 = ekf->P[2][1], P22 = ekf->P[2][2];
+
+    const float S    = P00 + ekf->R;
+    const float invS = 1.0f / MAX(1e-9f, S);
+
+    const float Kz  = P00 * invS;
+    const float Kv  = P10 * invS;
+    const float Kba = P20 * invS;
+
+    const float innov = zMeas - ekf->z;
+    ekf->innovZ = innov;
+
+    // state update
+    ekf->z  += Kz  * innov;
+    ekf->v  += Kv  * innov;
+    ekf->ba += Kba * innov;
+
+    // covariance update
+    const float IminusK = 1.0f - Kz;
+
+    float nP00 = IminusK * P00;
+    float nP01 = IminusK * P01;
+    float nP02 = IminusK * P02;
+
+    float nP10 = P10 - Kv * P00;
+    float nP11 = P11 - Kv * P01;
+    float nP12 = P12 - Kv * P02;
+
+    float nP20 = P20 - Kba * P00;
+    float nP21 = P21 - Kba * P01;
+    float nP22 = P22 - Kba * P02;
+
+    ekf->P[0][0] = nP00; ekf->P[0][1] = nP01; ekf->P[0][2] = nP02;
+    ekf->P[1][0] = nP10; ekf->P[1][1] = nP11; ekf->P[1][2] = nP12;
+    ekf->P[2][0] = nP20; ekf->P[2][1] = nP21; ekf->P[2][2] = nP22;
+}
+
+// ------------------ Position task ------------------
+
+static inline float metersFromCm(float cm) { return cm * 0.01f; }
+static inline float cmFromMeters(float m)  { return m * 100.0f;  }
+
+void positionInit(void)
+{
+    const float sampleTimeS = HZ_TO_INTERVAL(TASK_ALTITUDE_RATE_HZ);
+
+    // cosmetic filters
+    const float altitudeCutoffHz = positionConfig()->altitude_lpf / 100.0f;
+    const float altitudeGain     = pt2FilterGain(altitudeCutoffHz, sampleTimeS);
+    pt2FilterInit(&altitudeLpf, altitudeGain);
+
+    const float altitudeDerivativeCutoffHz = positionConfig()->altitude_d_lpf / 100.0f;
+    const float altitudeDerivativeGain     = pt2FilterGain(altitudeDerivativeCutoffHz, sampleTimeS);
+    pt2FilterInit(&altitudeDerivativeLpf, altitudeDerivativeGain);
+
+    ekfInit(&zEkf, 0.0f);
+}
 
 #if defined(USE_BARO) || defined(USE_GPS)
 void calculateEstimatedAltitude(void)
 {
-    static bool wasArmed = false;
-    static bool useZeroedGpsAltitude = false; // whether a zero for the GPS altitude value exists
-    static float gpsAltCm = 0.0f; // will hold last value on transient loss of 3D fix
-    static float gpsAltOffsetCm = 0.0f;
+    static bool  wasArmed = false;
     static float baroAltOffsetCm = 0.0f;
     static float newBaroAltOffsetCm = 0.0f;
 
+    // ---- 1) read sensors ----
     float baroAltCm = 0.0f;
-    float gpsTrust = 0.3f; // if no pDOP value, use 0.3, intended range 0-1;
-    bool haveBaroAlt = false; // true if baro exists and has been calibrated on power up
-    bool haveGpsAlt = false; // true if GPS is connected and while it has a 3D fix, set each run to false
+    bool  haveBaroAlt = false;
 
-    // *** Get sensor data
 #ifdef USE_BARO
     if (sensors(SENSOR_BARO)) {
-        baroAltCm = getBaroAltitude();
-        haveBaroAlt = true; // false only if there is no sensor on the board, or it has failed
-    }
-#endif
-#ifdef USE_GPS
-    if (sensors(SENSOR_GPS) && STATE(GPS_FIX)) {
-        // GPS_FIX means a 3D fix, which requires min 4 sats.
-        // On loss of 3D fix, gpsAltCm remains at the last value, haveGpsAlt becomes false, and gpsTrust goes to zero.
-        gpsAltCm = gpsSol.llh.altCm; // static, so hold last altitude value if 3D fix is lost to prevent fly to moon
-        haveGpsAlt = true; // stays false if no 3D fix
-        if (gpsSol.dop.pdop != 0) {
-            // pDOP of 1.0 is good.  100 is very bad.  Our gpsSol.dop.pdop values are *100
-            // When pDOP is a value less than 3.3, GPS trust will be stronger than default.
-            gpsTrust = 100.0f / gpsSol.dop.pdop;
-            // *** TO DO - investigate if we should use vDOP or vACC with UBlox units;
-        }
-        // always use at least 10% of other sources besides gps if available
-        gpsTrust = MIN(gpsTrust, 0.9f);
+        baroAltCm   = getBaroAltitude();  // cm, absolute-ish
+        haveBaroAlt = true;
     }
 #endif
 
-    //  ***  DISARMED  ***
+    // --- compute aWorldZ every loop (and run EKF predict) ------------
+    float ax = 0.0f, ay = 0.0f, az = 0.0f;
+    if (sensors(SENSOR_ACC)) {
+        const float k = acc.dev.acc_1G_rec * 9.80665f; // g -> m/s^2
+        ax = acc.accADC[X] * k;
+        ay = acc.accADC[Y] * k;
+        az = acc.accADC[Z] * k;
+    }
+
+    const float aWorldZ = rMat[2][0]*ax + rMat[2][1]*ay + rMat[2][2]*az - 9.80665f;
+    zEkf.r33 = rMat[2][2]; // for debug
+
+    const float dt = HZ_TO_INTERVAL(TASK_ALTITUDE_RATE_HZ);
+
+    // Allow bench verification of gravity compensation and attitude coupling while disarmed.
+    // When debug_mode = Z_EKF:
+    //  - debug[0] shows r33*100
+    //  - debug[1] shows aWorldZ*100 (centi m/s^2), should be ~0 at rest/level
+    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(zEkf.r33 * 100.0f));
+    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(aWorldZ * 100.0f));
     if (!ARMING_FLAG(ARMED)) {
-        if (wasArmed) { // things to run once, on disarming, after being armed
-            useZeroedGpsAltitude = false; // reset, and wait for valid GPS data to zero the GPS signal
+        DEBUG_SET(DEBUG_Z_EKF, 2, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 3, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 4, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 5, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 6, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 7, 0);
+    }
+
+    ekfPredict(&zEkf, aWorldZ, dt);
+
+    // ---- 2) arm/disarm handling & zeroing ----
+    if (!ARMING_FLAG(ARMED)) {
+        if (wasArmed) {
             wasArmed = false;
         }
 
-        newBaroAltOffsetCm = 0.2f * baroAltCm + 0.8f * newBaroAltOffsetCm; // smooth some recent baro samples
-        displayAltitudeCm = baroAltCm - baroAltOffsetCm; // if no GPS altitude, show un-smoothed Baro altitude in OSD and sensors tab, using most recent offset.
+        newBaroAltOffsetCm = 0.2f * baroAltCm + 0.8f * newBaroAltOffsetCm;
+        displayAltitudeCm  = baroAltCm - baroAltOffsetCm;   // show recent baro zero
+        zeroedAltitudeCm   = 0.0f;
 
-        if (haveGpsAlt) { // watch for valid GPS altitude data to get a zero value from
-            gpsAltOffsetCm = gpsAltCm; // update the zero offset value with the most recent valid gps altitude reading
-            useZeroedGpsAltitude = true; // we can use this offset to zero the GPS altitude on arming
-            if (!(positionConfig()->altitude_source == BARO_ONLY)) {
-                displayAltitudeCm = gpsAltCm; // estimatedAltitude shows most recent ASL GPS altitude in OSD and sensors, while disarmed
-            }
-        }
-        zeroedAltitudeCm = 0.0f; // always hold relativeAltitude at zero while disarmed
-        DEBUG_SET(DEBUG_ALTITUDE, 2, gpsAltCm / 100.0f); // Absolute altitude ASL in metres, max 32,767m
-    //  ***  ARMED  ***
     } else {
-        if (!wasArmed) { // things to run once, on arming, after being disarmed
+        // armed
+        if (!wasArmed) {
             baroAltOffsetCm = newBaroAltOffsetCm;
             wasArmed = true;
+            float z0m = haveBaroAlt ? metersFromCm(baroAltCm - baroAltOffsetCm) : 0.0f;
+            ekfInit(&zEkf, z0m);
         }
 
-        baroAltCm -= baroAltOffsetCm; // use smoothed baro with most recent zero from disarm period
+        // measurement (relative baro → meters)
+        float zMeas_m = 0.0f;
+        bool  zMeasValid = false;
 
-        if (haveGpsAlt) { // update relativeAltitude with every new gpsAlt value, or hold the previous value until 3D lock recovers
-            if (!useZeroedGpsAltitude && haveBaroAlt) { // armed without zero offset, can use baro values to zero later
-                gpsAltOffsetCm = gpsAltCm - baroAltCm; // not very accurate
-                useZeroedGpsAltitude = true;
-            }
-            if (useZeroedGpsAltitude) { // normal situation
-                zeroedAltitudeCm = gpsAltCm - gpsAltOffsetCm; // now that we have a GPS offset value, we can use it to zero relativeAltitude
-            }
-        } else {
-            gpsTrust = 0.0f;
-            // TO DO - smoothly reduce GPS trust, rather than immediately dropping to zero for what could be only a very brief loss of 3D fix 
+        if (haveBaroAlt) {
+            zMeas_m   = metersFromCm(baroAltCm - baroAltOffsetCm);
+            zMeasValid= true;
         }
-        DEBUG_SET(DEBUG_ALTITUDE, 2, lrintf(zeroedAltitudeCm / 10.0f)); // Relative altitude above takeoff, to 0.1m, rolls over at 3,276.7m
-        
-        // Empirical mixing of GPS and Baro altitudes
-        if (useZeroedGpsAltitude && (positionConfig()->altitude_source == DEFAULT || positionConfig()->altitude_source == GPS_ONLY)) {
-            if (haveBaroAlt && positionConfig()->altitude_source == DEFAULT) {
-                // mix zeroed GPS with Baro altitude data, if Baro data exists if are in default altitude control mode 
-                const float absDifferenceM = fabsf(zeroedAltitudeCm - baroAltCm) / 100.0f * positionConfig()->altitude_prefer_baro / 100.0f;
-                if (absDifferenceM > 1.0f) { // when there is a large difference, favour Baro
-                    gpsTrust /=  absDifferenceM;
-                }
-                zeroedAltitudeCm = zeroedAltitudeCm * gpsTrust + baroAltCm * (1.0f - gpsTrust);
+
+        // ---- 4) EKF update with baro (if valid & gated) ----
+        if (zMeasValid) {
+            const float S = zEkf.P[0][0] + zEkf.R;
+            const float innov = zMeas_m - zEkf.z;
+            const float gateSigma = positionConfig()->ekf_gate_sigma_x10 / 10.0f;
+            const float limit = gateSigma * sqrtf(MAX(1e-9f, S));
+            zEkf.gateRejected = (fabsf(innov) > limit) ? 1 : 0;
+            if (!zEkf.gateRejected) {
+                ekfUpdateZ(&zEkf, zMeas_m);
             }
-        } else if (haveBaroAlt && (positionConfig()->altitude_source == DEFAULT || positionConfig()->altitude_source == BARO_ONLY)) {
-            zeroedAltitudeCm = baroAltCm; // use Baro if no GPS data, or we want Baro only
+            zEkf.innovZ = innov; // keep for debug
         }
-    }
 
-    zeroedAltitudeCm = pt2FilterApply(&altitudeLpf, zeroedAltitudeCm);
-    // NOTE: this filter must receive 0 as its input, for the whole disarmed time, to ensure correct zeroed values on arming
-
-    if (wasArmed) {
-        displayAltitudeCm = zeroedAltitudeCm; // while armed, show filtered relative altitude in OSD / sensors tab
-    }
-
-    // *** calculate Vario signal
-    static float previousZeroedAltitudeCm = 0.0f;
-    zeroedAltitudeDerivative = (zeroedAltitudeCm - previousZeroedAltitudeCm) * TASK_ALTITUDE_RATE_HZ; // cm/s
-    previousZeroedAltitudeCm = zeroedAltitudeCm;
-
-    zeroedAltitudeDerivative = pt2FilterApply(&altitudeDerivativeLpf, zeroedAltitudeDerivative);
+        // ---- 5) outputs & cosmetic filters ----
+        float zCmFiltered = pt2FilterApply(&altitudeLpf, cmFromMeters(zEkf.z));
+        displayAltitudeCm = zCmFiltered;
 
 #ifdef USE_VARIO
-    estimatedVario = lrintf(zeroedAltitudeDerivative);
-    estimatedVario = applyDeadband(estimatedVario, 10); // ignore climb rates less than 0.1 m/s
+        float varioCms = zEkf.v * 100.0f;
+        varioCms = pt2FilterApply(&altitudeDerivativeLpf, varioCms);
+        estimatedVario = lrintf(varioCms);
+        estimatedVario = applyDeadband(estimatedVario, 10); // 0.1 m/s deadband
 #endif
- 
-    // *** set debugs
-    DEBUG_SET(DEBUG_ALTITUDE, 0, (int32_t)(100 * gpsTrust));
-    DEBUG_SET(DEBUG_ALTITUDE, 1, lrintf(baroAltCm / 10.0f)); // Relative altitude above takeoff, to 0.1m, rolls over at 3,276.7m
+
+    // ---- 6) debug channels (guarded) ----
+    // Debug is int16_t: scale for resolution
+    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(zEkf.r33 * 100.0f));     // 0..100
+    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(aWorldZ * 100.0f));      // centi m/s^2
+    DEBUG_SET(DEBUG_Z_EKF, 2, lrintf(zMeas_m * 100.0f));      // cm
+    DEBUG_SET(DEBUG_Z_EKF, 3, lrintf(zEkf.z * 100.0f));       // cm
+    DEBUG_SET(DEBUG_Z_EKF, 4, lrintf(zEkf.v * 100.0f));       // cm/s
+    DEBUG_SET(DEBUG_Z_EKF, 5, lrintf(zEkf.ba * 100.0f));      // centi m/s^2
+    DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(zEkf.innovZ * 100.0f));  // cm
+    DEBUG_SET(DEBUG_Z_EKF, 7, (int16_t)(zEkf.gateRejected ? 1 : 0));
+
+    }
+
+#ifdef USE_BARO
+    // legacy: relative baro (cm/10) on DEBUG_ALTITUDE[1]
+    DEBUG_SET(DEBUG_ALTITUDE, 1, lrintf((haveBaroAlt ? (baroAltCm - baroAltOffsetCm) : 0.0f) / 10.0f));
+#endif
 #ifdef USE_VARIO
     DEBUG_SET(DEBUG_ALTITUDE, 3, estimatedVario);
 #endif
     DEBUG_SET(DEBUG_RTH, 1, lrintf(displayAltitudeCm / 10.0f));
 }
-#endif //defined(USE_BARO) || defined(USE_GPS)
+#endif // USE_BARO || USE_GPS
 
 int32_t getEstimatedAltitudeCm(void)
 {
@@ -220,7 +346,8 @@ int32_t getEstimatedAltitudeCm(void)
 
 float getAltitude(void)
 {
-    return zeroedAltitudeCm;
+    // expose EKF z (m) as cm for legacy callers
+    return cmFromMeters(zEkf.z);
 }
 
 #ifdef USE_VARIO

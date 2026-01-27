@@ -50,7 +50,7 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT] = {
     { .boxId = BOXARM, .boxName = "ARM", .permanentId = 0 },
     { .boxId = BOXANGLE, .boxName = "ANGLE", .permanentId = 1 },
     { .boxId = BOXHORIZON, .boxName = "HORIZON", .permanentId = 2 },
-//    { .boxId = BOXBARO, .boxName = "BARO", .permanentId = 3 },
+    { .boxId = BOXBARO, .boxName = "BARO", .permanentId = 3 },
     { .boxId = BOXANTIGRAVITY, .boxName = "ANTI GRAVITY", .permanentId = 4 },
     { .boxId = BOXMAG, .boxName = "HELI DROP HEADING", .permanentId = 5 },
     { .boxId = BOXHEADFREE, .boxName = "HEADFREE", .permanentId = 6 },
@@ -216,6 +216,7 @@ void initActiveBoxIds(void)
         }
     
     if (sensors(SENSOR_BARO)) {
+        BME(BOXBARO);
         BME(BOXALTARM);
     }
 #if defined(USE_ACRO_TRAINER) && defined(USE_ACC)
