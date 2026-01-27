@@ -64,12 +64,12 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_prefer_baro  = 100,
     .altitude_lpf          = 300,   // 3.00 Hz
     .altitude_d_lpf        = 100,   // 1.00 Hz
-    // EKF defaults (roughly what we hardcoded before):
-    .ekf_qv_centi          = 40,    // -> Qv = (0.60)^2
-    .ekf_qba_centi         = 1,     // -> Qba = (0.02)^2 per sec
-    .ekf_qbb_centi         = 5,     // -> Qbb = (0.05)^2 per sec
-    .ekf_r_centi           = 10,    // -> R = (0.25)^2
-    .ekf_gate_sigma_x10    = 40,    // -> 3.0σ gate
+    // EKF defaults:
+    .ekf_qv_centi          = 80,    // 0.80 m/s^2 accel noise std
+    .ekf_qba_centi         = 2,     // 0.02 m/s^2/sqrt(s) accel bias RW std
+    .ekf_qbb_centi         = 3,     // 0.03 m/sqrt(s) baro bias RW std
+    .ekf_r_centi           = 25,    // 0.25 m baro measurement std
+    .ekf_gate_sigma_x10    = 30,    // 3.0σ gate
     .ekf_enable_adapt_r    = 1,
 
     // Altitude hold defaults (BARO_MODE)
