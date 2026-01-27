@@ -1787,7 +1787,7 @@ const clivalue_t valueTable[] = {
     { "alt_hold_kpv",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  0, 800 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kpv) },
     { "alt_hold_kiv",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  0, 400 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kiv) },
     { "alt_hold_vmax_cms",       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 600 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_vmax_cms) },
-    { "alt_hold_vstick_cms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 600 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_vstick_cms) },
+    { "alt_hold_vstick_slope_x1000", VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  1,  20 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_vstick_slope_x1000) },
 
 // PG_MODE_ACTIVATION_CONFIG
 #if defined(USE_CUSTOM_BOX_NAMES)

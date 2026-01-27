@@ -1558,7 +1558,7 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KPV, "%d",           positionConfig()->alt_hold_kpv);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KIV, "%d",           positionConfig()->alt_hold_kiv);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VMAX_CMS, "%d",      positionConfig()->alt_hold_vmax_cms);
-        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VSTICK_CMS, "%d",    positionConfig()->alt_hold_vstick_cms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VSTICK_SLOPE_X1000, "%d", positionConfig()->alt_hold_vstick_slope_x1000);
 
 
 #ifdef USE_MAG

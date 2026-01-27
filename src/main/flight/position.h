@@ -52,7 +52,7 @@ typedef struct positionConfig_s {
     uint16_t alt_hold_kpv;           // inner loop: throttle correction per (m/s) error (PWM units per m/s)
     uint16_t alt_hold_kiv;           // inner loop: throttle integral per (m/s*s) error (PWM units per m/s/s)
     uint16_t alt_hold_vmax_cms;      // max vertical speed command (cm/s)
-    uint16_t alt_hold_vstick_cms;    // stick vertical speed at full deflection (cm/s)
+    uint8_t  alt_hold_vstick_slope_x1000; // stick slope (m/s per PWM), m = val/1000 (1..20 => 0.001..0.020)
 } positionConfig_t;
 
 PG_DECLARE(positionConfig_t, positionConfig);

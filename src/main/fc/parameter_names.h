@@ -143,7 +143,7 @@
 #define PARAM_NAME_POSITION_ALT_HOLD_KPV "alt_hold_kpv"
 #define PARAM_NAME_POSITION_ALT_HOLD_KIV "alt_hold_kiv"
 #define PARAM_NAME_POSITION_ALT_HOLD_VMAX_CMS "alt_hold_vmax_cms"
-#define PARAM_NAME_POSITION_ALT_HOLD_VSTICK_CMS "alt_hold_vstick_cms"
+#define PARAM_NAME_POSITION_ALT_HOLD_VSTICK_SLOPE_X1000 "alt_hold_vstick_slope_x1000"
 #define PARAM_NAME_ANGLE_FEEDFORWARD "angle_feedforward"
 #define PARAM_NAME_ANGLE_FF_SMOOTHING_MS "angle_feedforward_smoothing_ms"
 #define PARAM_NAME_ANGLE_LIMIT "angle_limit"

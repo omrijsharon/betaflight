@@ -57,7 +57,7 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 6);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 7);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_source       = DEFAULT,
@@ -77,7 +77,7 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .alt_hold_kpv          = 200,   // 200 PWM per (m/s)
     .alt_hold_kiv          = 60,    // 60 PWM per (m/s*s)
     .alt_hold_vmax_cms     = 300,   // 3 m/s
-    .alt_hold_vstick_cms   = 200
+    .alt_hold_vstick_slope_x1000 = 10 // 0.010 m/s per PWM (deadbanded)
 );
 
 // ------------------ EKF helpers ------------------
@@ -508,8 +508,8 @@ void calculateEstimatedAltitude(void)
                     mixerSetThrottleAltitudeCorrection(0);
                 }
 
-                const float denom = MAX(1.0f, 500.0f - deadband);
-                const float vStick = (stickAdj / denom) * (pcfg->alt_hold_vstick_cms / 100.0f);
+                const float m = constrainf(pcfg->alt_hold_vstick_slope_x1000 / 1000.0f, 0.001f, 0.020f);
+                const float vStick = stickAdj * m;
                 altHoldTargetZ += vStick * dt;
 
                 const float kz = pcfg->alt_hold_kz_x100 / 100.0f;

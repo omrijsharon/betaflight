@@ -217,7 +217,10 @@ static void calculateThrottleAndCurrentMotorEndpoints(timeUs_t currentTimeUs)
             pidResetIterm();
         }
     } else {
-        throttle = rcCommand[THROTTLE] - PWM_RANGE_MIN + throttleAngleCorrection;
+        // In BARO mode, throttle stick is used as a vertical-speed command, not direct motor throttle.
+        // Use midrc as the base and apply altitude hold corrections on top.
+        const float throttleBase = (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED)) ? rxConfig()->midrc : rcCommand[THROTTLE];
+        throttle = throttleBase - PWM_RANGE_MIN + throttleAngleCorrection;
         if (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED)) {
             throttle += throttleAltitudeCorrection;
         }
