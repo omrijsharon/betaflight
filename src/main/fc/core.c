@@ -1014,8 +1014,12 @@ void processRxModes(timeUs_t currentTimeUs)
         processRcAdjustments(currentControlRateProfile);
     }
 
-    bool canUseHorizonMode = true;
-    if ((IS_RC_MODE_ACTIVE(BOXANGLE) || failsafeIsActive()) && (sensors(SENSOR_ACC))) {
+    // BARO mode requires self-leveling attitude control. When BARO mode is active, force ANGLE mode
+    // (even if BOXANGLE is not active) and suppress HORIZON mode.
+    const bool baroModeRequested = IS_RC_MODE_ACTIVE(BOXBARO) && sensors(SENSOR_BARO);
+
+    bool canUseHorizonMode = !baroModeRequested;
+    if ((IS_RC_MODE_ACTIVE(BOXANGLE) || baroModeRequested || failsafeIsActive()) && (sensors(SENSOR_ACC))) {
         // bumpless transfer to Level mode
         canUseHorizonMode = false;
 
@@ -1035,6 +1039,14 @@ void processRxModes(timeUs_t currentTimeUs)
         }
     } else {
         DISABLE_FLIGHT_MODE(HORIZON_MODE);
+    }
+
+    if (baroModeRequested) {
+        if (!FLIGHT_MODE(BARO_MODE)) {
+            ENABLE_FLIGHT_MODE(BARO_MODE);
+        }
+    } else {
+        DISABLE_FLIGHT_MODE(BARO_MODE);
     }
 
 #ifdef USE_GPS_RESCUE
