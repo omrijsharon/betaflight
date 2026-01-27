@@ -214,14 +214,14 @@ void initActiveBoxIds(void)
         if (featureIsEnabled(FEATURE_INFLIGHT_ACC_CAL)) {
             BME(BOXCALIB);
         }
-    
-    if (sensors(SENSOR_BARO)) {
-        BME(BOXBARO);
-        BME(BOXALTARM);
-    }
 #if defined(USE_ACRO_TRAINER) && defined(USE_ACC)
         BME(BOXACROTRAINER);
 #endif // USE_ACRO_TRAINER
+    }
+
+    if (sensors(SENSOR_BARO)) {
+        BME(BOXBARO);
+        BME(BOXALTARM);
     }
 
     if (sensors(SENSOR_MAG) || sensors(SENSOR_ACC)) {
