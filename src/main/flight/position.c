@@ -45,6 +45,7 @@ static pt2Filter_t baroVarioLpf;         // baro-derived vario LPF (for altitude
 static bool altHoldActive = false;
 static float altHoldTargetZ = 0.0f;      // meters
 static float altHoldVIntegral = 0.0f;    // integral of v error
+static bool altHoldWasInDeadband = true;
 
 // EKF instance
 static positionAltEKF_t zEkf;
@@ -404,6 +405,7 @@ void calculateEstimatedAltitude(void)
 
         altHoldActive = false;
         altHoldVIntegral = 0.0f;
+        altHoldWasInDeadband = true;
         mixerSetThrottleAltitudeCorrection(0);
         havePrevZMeas = false;
 
@@ -417,6 +419,7 @@ void calculateEstimatedAltitude(void)
             havePrevZMeas = false;
             altHoldActive = false;
             altHoldVIntegral = 0.0f;
+            altHoldWasInDeadband = true;
             mixerSetThrottleAltitudeCorrection(0);
         }
 
@@ -494,19 +497,30 @@ void calculateEstimatedAltitude(void)
             if (fabsf(stick) > deadband) {
                 stickAdj = (stick > 0.0f) ? (stick - deadband) : (stick + deadband);
             }
+            const bool inDeadband = (stickAdj == 0.0f);
 
             if ((stickAdj != 0.0f) && !rcControlsConfig()->alt_hold_fast_change) {
                 // Stick moved out of deadband: disable altitude hold until re-centered.
                 altHoldActive = false;
                 altHoldVIntegral = 0.0f;
+                altHoldWasInDeadband = true;
                 mixerSetThrottleAltitudeCorrection(0);
             } else {
                 if (!altHoldActive) {
                     altHoldActive = true;
                     altHoldTargetZ = zEkf.z;
                     altHoldVIntegral = 0.0f;
+                    altHoldWasInDeadband = true;
                     mixerSetThrottleAltitudeCorrection(0);
                 }
+
+                // When the throttle stick enters the deadband, re-latch the current altitude as the target.
+                // This makes "stick centered" mean "hold current altitude now", rather than returning to the old target.
+                if (inDeadband && !altHoldWasInDeadband) {
+                    altHoldTargetZ = zEkf.z;
+                    altHoldVIntegral = 0.0f;
+                }
+                altHoldWasInDeadband = inDeadband;
 
                 const float m = constrainf(pcfg->alt_hold_vstick_slope_x1000 / 1000.0f, 0.001f, 0.020f);
                 const float vStick = stickAdj * m;
