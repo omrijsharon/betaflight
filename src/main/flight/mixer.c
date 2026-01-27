@@ -217,13 +217,16 @@ static void calculateThrottleAndCurrentMotorEndpoints(timeUs_t currentTimeUs)
             pidResetIterm();
         }
     } else {
-        throttle = rcCommand[THROTTLE] - PWM_RANGE_MIN + throttleAngleCorrection + throttleAltitudeCorrection;
+        throttle = rcCommand[THROTTLE] - PWM_RANGE_MIN + throttleAngleCorrection;
+        if (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED)) {
+            throttle += throttleAltitudeCorrection;
+        }
 
         // BARO altitude hold: compensate for reduced vertical thrust when tilted.
         // Use R[2,2] = cos(tilt) (see getCosTiltAngle()) and scale throttle by 1/cos(tilt).
-        // Constrain to avoid runaway near 90 degrees.
+        // Constrain to avoid runaway near 90 degrees (and intentionally limit compensation above ~60 deg).
         if (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED)) {
-            const float cosTilt = constrainf(fabsf(getCosTiltAngle()), 0.2f, 1.0f);
+            const float cosTilt = constrainf(fabsf(getCosTiltAngle()), 0.5f, 1.0f);
             throttle /= cosTilt;
         }
 
