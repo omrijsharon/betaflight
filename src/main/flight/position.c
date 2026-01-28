@@ -352,6 +352,16 @@ void calculateEstimatedAltitude(void)
     static float prevZMeas_m = 0.0f;
     static bool  havePrevZMeas = false;
 
+    // BARO altitude hold debug taps (DEBUG_BARO_ALTHOLD)
+    float dbg_uP = 0.0f;      // PWM
+    float dbg_uI = 0.0f;      // PWM
+    float dbg_u = 0.0f;       // PWM
+    float dbg_vP = 0.0f;      // m/s
+    float dbg_vFF = 0.0f;     // m/s
+    float dbg_vSet = 0.0f;    // m/s
+    float dbg_vErr = 0.0f;    // m/s
+    float dbg_r33 = 0.0f;     // unitless
+
     // ---- 1) read sensors ----
     float baroAltCm = 0.0f;
     bool  haveBaroAlt = false;
@@ -552,6 +562,16 @@ void calculateEstimatedAltitude(void)
 
                 u = constrainf(u, -maxCorr, maxCorr);
                 mixerSetThrottleAltitudeCorrection(lrintf(u));
+
+                // debug outputs (gain*term) for BARO altitude hold
+                dbg_uP = uP;
+                dbg_uI = uI;
+                dbg_u = u;
+                dbg_vP = kz * (altHoldTargetZ - zEkf.z);
+                dbg_vFF = vStick;
+                dbg_vSet = vSet;
+                dbg_vErr = vErr;
+                dbg_r33 = zEkf.r33;
             }
         } else {
             altHoldActive = false;
@@ -570,6 +590,19 @@ void calculateEstimatedAltitude(void)
     DEBUG_SET(DEBUG_Z_EKF, 5, lrintf(zEkf.ba * 100.0f));      // centi m/s^2
     DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(zEkf.innovZ * 100.0f));  // cm
     DEBUG_SET(DEBUG_Z_EKF, 7, (int16_t)(zEkf.gateRejected ? 1 : 0));
+
+    // BARO altitude hold debug:
+    // 0: uP (PWM), 1: uI (PWM), 2: u (PWM),
+    // 3: vP (cm/s), 4: vFF (cm/s), 5: vSet (cm/s), 6: vErr (cm/s),
+    // 7: r33*100 (cos tilt)
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 0, (int16_t)constrain(lrintf(dbg_uP), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 1, (int16_t)constrain(lrintf(dbg_uI), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 2, (int16_t)constrain(lrintf(dbg_u), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 3, (int16_t)constrain(lrintf(dbg_vP * 100.0f), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 4, (int16_t)constrain(lrintf(dbg_vFF * 100.0f), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 5, (int16_t)constrain(lrintf(dbg_vSet * 100.0f), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 6, (int16_t)constrain(lrintf(dbg_vErr * 100.0f), INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_BARO_ALTHOLD, 7, (int16_t)constrain(lrintf(dbg_r33 * 100.0f), INT16_MIN, INT16_MAX));
 
     }
 

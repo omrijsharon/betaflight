@@ -123,6 +123,7 @@ typedef enum {
     DEBUG_RX_RAW,
     DEBUG_MAG_ERROR,
     DEBUG_Z_EKF,
+    DEBUG_BARO_ALTHOLD,
     DEBUG_COUNT
 } debugType_e;
 

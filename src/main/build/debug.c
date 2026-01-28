@@ -121,4 +121,5 @@ const char * const debugModeNames[DEBUG_COUNT] = {
     "RX_RAW",
     "MAG_ERROR",
     "Z_EKF",
+    "BARO_ALTHOLD",
 };
