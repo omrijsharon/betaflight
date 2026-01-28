@@ -54,6 +54,7 @@ typedef struct positionConfig_s {
     uint16_t alt_hold_vmax_cms;      // max vertical speed command (cm/s)
     uint8_t  alt_hold_vstick_slope_x1000; // stick slope (m/s per PWM), m = val/1000 (1..20 => 0.001..0.020)
     uint16_t alt_hold_thrust_zero_pwm;    // PWM at ~0 thrust (e.g. 1150) for tilt compensation linearization
+    uint16_t alt_hold_hover_pwm;          // PWM at hover (mg ~= thrust) used as BARO-mode throttle base
 } positionConfig_t;
 
 PG_DECLARE(positionConfig_t, positionConfig);

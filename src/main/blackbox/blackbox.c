@@ -1560,6 +1560,7 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VMAX_CMS, "%d",      positionConfig()->alt_hold_vmax_cms);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_VSTICK_SLOPE_X1000, "%d", positionConfig()->alt_hold_vstick_slope_x1000);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_THRUST_ZERO_PWM, "%d", positionConfig()->alt_hold_thrust_zero_pwm);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_HOVER_PWM, "%d", positionConfig()->alt_hold_hover_pwm);
 
 
 #ifdef USE_MAG

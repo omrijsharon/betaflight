@@ -221,7 +221,9 @@ static void calculateThrottleAndCurrentMotorEndpoints(timeUs_t currentTimeUs)
         // In BARO mode, throttle stick is used as a vertical-speed command, not direct motor throttle.
         // Use midrc as the base and apply altitude hold corrections on top.
         const bool baroAltHoldActive = (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED));
-        const float throttleBase = baroAltHoldActive ? rxConfig()->midrc : rcCommand[THROTTLE];
+        const float throttleBase = baroAltHoldActive
+            ? constrainf(positionConfig()->alt_hold_hover_pwm, PWM_RANGE_MIN, PWM_RANGE_MAX)
+            : rcCommand[THROTTLE];
 
         // Keep legacy throttleAngleCorrection behavior for non-BARO modes, but do not double-compensate in BARO mode.
         throttle = throttleBase - PWM_RANGE_MIN + throttleAngleCorrection;
