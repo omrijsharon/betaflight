@@ -58,7 +58,7 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 7);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 8);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_source       = DEFAULT,
@@ -78,7 +78,8 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .alt_hold_kpv          = 200,   // 200 PWM per (m/s)
     .alt_hold_kiv          = 60,    // 60 PWM per (m/s*s)
     .alt_hold_vmax_cms     = 300,   // 3 m/s
-    .alt_hold_vstick_slope_x1000 = 10 // 0.010 m/s per PWM (deadbanded)
+    .alt_hold_vstick_slope_x1000 = 10, // 0.010 m/s per PWM (deadbanded)
+    .alt_hold_thrust_zero_pwm = 1150
 );
 
 // ------------------ EKF helpers ------------------

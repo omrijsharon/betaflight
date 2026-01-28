@@ -50,6 +50,7 @@
 #include "flight/imu.h"
 #include "flight/mixer_init.h"
 #include "flight/mixer_tricopter.h"
+#include "flight/position.h"
 #include "flight/pid.h"
 #include "flight/rpm_filter.h"
 
@@ -226,11 +227,16 @@ static void calculateThrottleAndCurrentMotorEndpoints(timeUs_t currentTimeUs)
         }
 
         // BARO altitude hold: compensate for reduced vertical thrust when tilted.
-        // Use R[2,2] = cos(tilt) (see getCosTiltAngle()) and scale throttle by 1/cos(tilt).
+        // Use R[2,2] = cos(tilt) (see getCosTiltAngle()) and assume thrust is ~linear above a "zero thrust" PWM.
+        // Compensate by scaling the (PWM - thrust_zero) component by 1/cos(tilt).
         // Constrain to avoid runaway near 90 degrees (and intentionally limit compensation above ~60 deg).
         if (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED)) {
             const float cosTilt = constrainf(fabsf(getCosTiltAngle()), 0.5f, 1.0f);
-            throttle /= cosTilt;
+            const float pwmAbs = throttle + PWM_RANGE_MIN;
+            const float thrustZero = constrainf(positionConfig()->alt_hold_thrust_zero_pwm, PWM_RANGE_MIN, PWM_RANGE_MAX);
+            const float effective = MAX(0.0f, pwmAbs - thrustZero);
+            const float pwmComp = thrustZero + (effective / cosTilt);
+            throttle = pwmComp - PWM_RANGE_MIN;
         }
 
         currentThrottleInputRange = PWM_RANGE;
