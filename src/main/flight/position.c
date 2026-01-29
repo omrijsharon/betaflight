@@ -58,7 +58,7 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 9);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 10);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_source       = DEFAULT,
@@ -80,7 +80,8 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .alt_hold_vmax_cms     = 300,   // 3 m/s
     .alt_hold_vstick_slope_x1000 = 10, // 0.010 m/s per PWM (deadbanded)
     .alt_hold_thrust_zero_pwm = 1150,
-    .alt_hold_hover_pwm = 1300
+    .alt_hold_hover_pwm = 1300,
+    .alt_hold_i_limit_cms = 500
 );
 
 // ------------------ EKF helpers ------------------
@@ -556,7 +557,8 @@ void calculateEstimatedAltitude(void)
                 // Basic anti-windup: only integrate if not saturated or if integration would unwind.
                 if ((fabsf(u) < maxCorr) || ((u > 0.0f) && (vErr < 0.0f)) || ((u < 0.0f) && (vErr > 0.0f))) {
                     altHoldVIntegral += vErr * dt;
-                    altHoldVIntegral = constrainf(altHoldVIntegral, -5.0f, 5.0f);
+                    const float iLimit = MAX(0.0f, pcfg->alt_hold_i_limit_cms) / 100.0f;
+                    altHoldVIntegral = constrainf(altHoldVIntegral, -iLimit, iLimit);
                     uI = ki * altHoldVIntegral;
                     u = uP + uI;
                 }
