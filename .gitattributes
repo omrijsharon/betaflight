@@ -1,4 +1,5 @@
 LICENSE text eol=lf
+.gitattributes text eol=lf
 *.md text eol=lf
 *.c text eol=lf
 *.cc text eol=lf
@@ -28,3 +29,7 @@ Makefile text eol=lf
 *.txt text eol=lf
 *.sh text eol=lf
 *.config text eol=lf
+
+# Arduino helper library: force LF in working tree to avoid core.autocrlf warnings
+arduino_msp/* text eol=lf
+arduino_msp/** text eol=lf
