@@ -1393,6 +1393,34 @@ case MSP_NAME:
         }
         break;
 
+    case MSP_Z_EKF_CONFIG:
+        {
+            const positionConfig_t *pcfg = positionConfig();
+            sbufWriteU16(dst, pcfg->ekf_qv_centi);
+            sbufWriteU16(dst, pcfg->ekf_qba_centi);
+            sbufWriteU16(dst, pcfg->ekf_qbb_centi);
+            sbufWriteU16(dst, pcfg->ekf_r_centi);
+            sbufWriteU8(dst, pcfg->ekf_gate_sigma_x10);
+            sbufWriteU8(dst, pcfg->ekf_enable_adapt_r);
+        }
+        break;
+
+    case MSP_BARO_ALTHOLD_CONFIG:
+        {
+            const positionConfig_t *pcfg = positionConfig();
+            sbufWriteU16(dst, pcfg->alt_hold_kz_x100);
+            sbufWriteU16(dst, pcfg->alt_hold_kpv);
+            sbufWriteU16(dst, pcfg->alt_hold_kiv);
+            sbufWriteU16(dst, pcfg->alt_hold_i_limit_cms);
+            sbufWriteU16(dst, pcfg->alt_hold_vmax_cms);
+            sbufWriteU8(dst, pcfg->alt_hold_vstick_slope_x1000);
+            sbufWriteU16(dst, pcfg->alt_hold_thrust_zero_pwm);
+            sbufWriteU16(dst, pcfg->alt_hold_hover_pwm);
+            sbufWriteU8(dst, rcControlsConfig()->alt_hold_deadband);
+            sbufWriteU8(dst, rcControlsConfig()->alt_hold_fast_change);
+        }
+        break;
+
     case MSP_PIDNAMES:
         for (const char *c = pidNames; *c; c++) {
             sbufWriteU8(dst, *c);
@@ -2739,6 +2767,37 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             currentPidProfile->pid[i].D = sbufReadU8(src);
         }
         pidInitConfig(currentPidProfile);
+        break;
+
+    case MSP_SET_Z_EKF_CONFIG:
+        {
+            positionConfig_t *pcfg = positionConfigMutable();
+            pcfg->ekf_qv_centi = constrain(sbufReadU16(src), 10, 300);
+            pcfg->ekf_qba_centi = constrain(sbufReadU16(src), 1, 50);
+            pcfg->ekf_qbb_centi = constrain(sbufReadU16(src), 1, 100);
+            pcfg->ekf_r_centi = constrain(sbufReadU16(src), 10, 100);
+            pcfg->ekf_gate_sigma_x10 = constrain(sbufReadU8(src), 10, 50);
+            pcfg->ekf_enable_adapt_r = constrain(sbufReadU8(src), 0, 1);
+            positionUpdateAltEKFTunables();
+        }
+        break;
+
+    case MSP_SET_BARO_ALTHOLD_CONFIG:
+        {
+            positionConfig_t *pcfg = positionConfigMutable();
+            pcfg->alt_hold_kz_x100 = constrain(sbufReadU16(src), 1, 300);
+            pcfg->alt_hold_kpv = constrain(sbufReadU16(src), 0, 800);
+            pcfg->alt_hold_kiv = constrain(sbufReadU16(src), 0, 400);
+            pcfg->alt_hold_i_limit_cms = constrain(sbufReadU16(src), 0, 2000);
+            pcfg->alt_hold_vmax_cms = constrain(sbufReadU16(src), 10, 600);
+            pcfg->alt_hold_vstick_slope_x1000 = constrain(sbufReadU8(src), 1, 20);
+            pcfg->alt_hold_thrust_zero_pwm = constrain(sbufReadU16(src), 1000, 1400);
+            pcfg->alt_hold_hover_pwm = constrain(sbufReadU16(src), 1000, 2000);
+
+            rcControlsConfig_t *rcCfg = rcControlsConfigMutable();
+            rcCfg->alt_hold_deadband = constrain(sbufReadU8(src), 0, 200);
+            rcCfg->alt_hold_fast_change = constrain(sbufReadU8(src), 0, 1);
+        }
         break;
 
     case MSP_SET_MODE_RANGE:

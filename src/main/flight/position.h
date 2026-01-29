@@ -63,6 +63,7 @@ PG_DECLARE(positionConfig_t, positionConfig);
 // lifecycle
 void positionInit(void);
 void calculateEstimatedAltitude(void);
+void positionUpdateAltEKFTunables(void);
 
 // public getters (legacy API preserved)
 int32_t getEstimatedAltitudeCm(void);

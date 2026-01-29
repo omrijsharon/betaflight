@@ -86,6 +86,21 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
 
 // ------------------ EKF helpers ------------------
 
+void positionUpdateAltEKFTunables(void)
+{
+    const positionConfig_t *pcfg = positionConfig();
+    const float qv   = (pcfg->ekf_qv_centi  / 100.0f);
+    const float qba  = (pcfg->ekf_qba_centi / 100.0f);
+    const float qbb  = (pcfg->ekf_qbb_centi / 100.0f);
+    const float rstd = (pcfg->ekf_r_centi   / 100.0f);
+
+    zEkf.Qv    = qv  * qv;     // (m/s^2)^2
+    zEkf.Qba   = qba * qba;    // (m/s^2)^2 per sec
+    zEkf.Qbb   = qbb * qbb;    // (m^2) per sec
+    zEkf.R     = rstd * rstd;  // m^2
+    zEkf.R_eff = zEkf.R;
+}
+
 static inline void ekfInit(positionAltEKF_t *ekf, float z0)
 {
     ekf->z  = z0;
@@ -109,19 +124,8 @@ static inline void ekfInit(positionAltEKF_t *ekf, float z0)
     ekf->P[2][2] = pba0;
     ekf->P[3][3] = pbb0;
 
-    // Pull from CLI-config (centi-scaling)
-    const positionConfig_t *pcfg = positionConfig();
-    const float qv   = (pcfg->ekf_qv_centi  / 100.0f);
-    const float qba  = (pcfg->ekf_qba_centi / 100.0f);
-    const float qbb  = (pcfg->ekf_qbb_centi / 100.0f);
-    const float rstd = (pcfg->ekf_r_centi   / 100.0f);
-
     // noises (tunable)
-    ekf->Qv    = qv  * qv;     // (m/s^2)^2
-    ekf->Qba   = qba * qba;    // (m/s^2)^2 per sec
-    ekf->Qbb   = qbb * qbb;    // (m^2) per sec
-    ekf->R     = rstd * rstd;  // m^2
-    ekf->R_eff = ekf->R;
+    positionUpdateAltEKFTunables();
 
     ekf->aWorldZ = 0.0f;
     ekf->innovZ  = 0.0f;

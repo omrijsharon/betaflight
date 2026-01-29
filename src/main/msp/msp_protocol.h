@@ -62,7 +62,7 @@
 #define MSP_PROTOCOL_VERSION                0
 
 #define API_VERSION_MAJOR                   1  // increment when major changes are made
-#define API_VERSION_MINOR                   46 // increment after a release, to set the version for all changes to go into the following release (if no changes to MSP are made between the releases, this can be reverted before the release)
+#define API_VERSION_MINOR                   47 // increment after a release, to set the version for all changes to go into the following release (if no changes to MSP are made between the releases, this can be reverted before the release)
 
 #define API_VERSION_LENGTH                  2
 
@@ -324,6 +324,18 @@
 #define MSP_SET_GPS_RESCUE_PIDS  226    //in message          GPS Rescue throttleP and velocity PIDS + yaw P
 #define MSP_SET_VTXTABLE_BAND    227    //in message          set vtxTable band/channel data (one band at a time)
 #define MSP_SET_VTXTABLE_POWERLEVEL 228 //in message          set vtxTable powerLevel data (one powerLevel at a time)
+
+// Custom/extended commands (local fork)
+// Z_EKF config:
+//  payload: qv_centi(u16), qba_centi(u16), qbb_centi(u16), r_centi(u16), gate_sigma_x10(u8), enable_adapt_r(u8)
+#define MSP_Z_EKF_CONFIG         231    //out message         Get Z_EKF parameters
+#define MSP_SET_Z_EKF_CONFIG     232    //in message          Set Z_EKF parameters
+// BARO altitude hold config:
+//  payload: kz_x100(u16), kpv(u16), kiv(u16), i_limit_cms(u16), vmax_cms(u16),
+//           vstick_slope_x1000(u8), thrust_zero_pwm(u16), hover_pwm(u16),
+//           deadband(u8), fast_change(u8)
+#define MSP_BARO_ALTHOLD_CONFIG      233    //out message     Get BARO altitude hold parameters
+#define MSP_SET_BARO_ALTHOLD_CONFIG  234    //in message      Set BARO altitude hold parameters
 
 // #define MSP_BIND                 240    //in message          no param
 // #define MSP_ALARMS               242
