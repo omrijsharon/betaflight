@@ -1414,6 +1414,7 @@ case MSP_NAME:
             sbufWriteU16(dst, pcfg->alt_hold_i_limit_cms);
             sbufWriteU16(dst, pcfg->alt_hold_vmax_cms);
             sbufWriteU8(dst, pcfg->alt_hold_vstick_slope_x1000);
+            sbufWriteU8(dst, pcfg->alt_hold_vff_gain_x100);
             sbufWriteU16(dst, pcfg->alt_hold_thrust_zero_pwm);
             sbufWriteU16(dst, pcfg->alt_hold_hover_pwm);
             sbufWriteU8(dst, rcControlsConfig()->alt_hold_deadband);
@@ -2791,6 +2792,14 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             pcfg->alt_hold_i_limit_cms = constrain(sbufReadU16(src), 0, 2000);
             pcfg->alt_hold_vmax_cms = constrain(sbufReadU16(src), 10, 600);
             pcfg->alt_hold_vstick_slope_x1000 = constrain(sbufReadU8(src), 1, 20);
+            // Backward compatible decode:
+            // old payload (no vff_gain): thrust_zero(u16), hover(u16), deadband(u8), fast_change(u8) => 6 bytes remaining
+            // new payload (with vff_gain): vff_gain(u8) + above => 7 bytes remaining
+            if (sbufBytesRemaining(src) >= 7) {
+                pcfg->alt_hold_vff_gain_x100 = constrain(sbufReadU8(src), 0, 200);
+            } else {
+                pcfg->alt_hold_vff_gain_x100 = 100;
+            }
             pcfg->alt_hold_thrust_zero_pwm = constrain(sbufReadU16(src), 1000, 1400);
             pcfg->alt_hold_hover_pwm = constrain(sbufReadU16(src), 1000, 2000);
 

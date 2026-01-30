@@ -144,6 +144,7 @@
 #define PARAM_NAME_POSITION_ALT_HOLD_KIV "alt_hold_kiv"
 #define PARAM_NAME_POSITION_ALT_HOLD_VMAX_CMS "alt_hold_vmax_cms"
 #define PARAM_NAME_POSITION_ALT_HOLD_VSTICK_SLOPE_X1000 "alt_hold_vstick_slope_x1000"
+#define PARAM_NAME_POSITION_ALT_HOLD_VFF_GAIN_X100 "alt_hold_vff_gain_x100"
 #define PARAM_NAME_POSITION_ALT_HOLD_THRUST_ZERO_PWM "alt_hold_thrust_zero_pwm"
 #define PARAM_NAME_POSITION_ALT_HOLD_HOVER_PWM "alt_hold_hover_pwm"
 #define PARAM_NAME_POSITION_ALT_HOLD_I_LIMIT_CMS "alt_hold_i_limit_cms"

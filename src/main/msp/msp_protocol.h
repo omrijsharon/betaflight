@@ -332,7 +332,7 @@
 #define MSP_SET_Z_EKF_CONFIG     232    //in message          Set Z_EKF parameters
 // BARO altitude hold config:
 //  payload: kz_x100(u16), kpv(u16), kiv(u16), i_limit_cms(u16), vmax_cms(u16),
-//           vstick_slope_x1000(u8), thrust_zero_pwm(u16), hover_pwm(u16),
+//           vstick_slope_x1000(u8), vff_gain_x100(u8), thrust_zero_pwm(u16), hover_pwm(u16),
 //           deadband(u8), fast_change(u8)
 #define MSP_BARO_ALTHOLD_CONFIG      233    //out message     Get BARO altitude hold parameters
 #define MSP_SET_BARO_ALTHOLD_CONFIG  234    //in message      Set BARO altitude hold parameters

@@ -1790,6 +1790,7 @@ const clivalue_t valueTable[] = {
     { "alt_hold_kiv",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  0, 400 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kiv) },
     { "alt_hold_vmax_cms",       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 600 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_vmax_cms) },
     { "alt_hold_vstick_slope_x1000", VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  1,  20 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_vstick_slope_x1000) },
+    { "alt_hold_vff_gain_x100",  VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  0, 200 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_vff_gain_x100) },
     { "alt_hold_thrust_zero_pwm", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 1400 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_thrust_zero_pwm) },
     { "alt_hold_hover_pwm",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 2000 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_hover_pwm) },
     { "alt_hold_i_limit_cms",    VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 2000 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_i_limit_cms) },

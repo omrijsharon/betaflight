@@ -58,7 +58,7 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 10);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 11);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_source       = DEFAULT,
@@ -79,6 +79,7 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .alt_hold_kiv          = 60,    // 60 PWM per (m/s*s)
     .alt_hold_vmax_cms     = 300,   // 3 m/s
     .alt_hold_vstick_slope_x1000 = 10, // 0.010 m/s per PWM (deadbanded)
+    .alt_hold_vff_gain_x100 = 100,  // 1.00x velocity feedforward gain
     .alt_hold_thrust_zero_pwm = 1150,
     .alt_hold_hover_pwm = 1300,
     .alt_hold_i_limit_cms = 500
@@ -362,8 +363,8 @@ void calculateEstimatedAltitude(void)
     float dbg_uP = 0.0f;      // PWM
     float dbg_uI = 0.0f;      // PWM
     float dbg_u = 0.0f;       // PWM
-    float dbg_vP = 0.0f;      // m/s
-    float dbg_vFF = 0.0f;     // m/s
+    float dbg_vP = 0.0f;      // m/s (outer-loop altitude->velocity term; active in deadband only)
+    float dbg_vFF = 0.0f;     // m/s (stick velocity feedforward after gain; non-deadband only)
     float dbg_vSet = 0.0f;    // m/s
     float dbg_vErr = 0.0f;    // m/s
     float dbg_r33 = 0.0f;     // unitless
@@ -527,26 +528,37 @@ void calculateEstimatedAltitude(void)
                     altHoldActive = true;
                     altHoldTargetZ = zEkf.z;
                     altHoldVIntegral = 0.0f;
-                    altHoldWasInDeadband = true;
+                    altHoldWasInDeadband = inDeadband;
                     mixerSetThrottleAltitudeCorrection(0);
                 }
 
-                // When the throttle stick enters the deadband, re-latch the current altitude as the target.
-                // This makes "stick centered" mean "hold current altitude now", rather than returning to the old target.
-                if (inDeadband && !altHoldWasInDeadband) {
-                    altHoldTargetZ = zEkf.z;
-                    altHoldVIntegral = 0.0f;
-                }
-                altHoldWasInDeadband = inDeadband;
-
                 const float m = constrainf(pcfg->alt_hold_vstick_slope_x1000 / 1000.0f, 0.001f, 0.020f);
                 const float vStick = stickAdj * m;
-                altHoldTargetZ += vStick * dt;
+                const float vffGain = constrainf(pcfg->alt_hold_vff_gain_x100 / 100.0f, 0.0f, 2.0f);
+                const float vFF = vStick * vffGain;
 
                 const float kz = pcfg->alt_hold_kz_x100 / 100.0f;
                 const float vmax = pcfg->alt_hold_vmax_cms / 100.0f;
 
-                float vSet = kz * (altHoldTargetZ - zEkf.z) + vStick;
+                // Two-state behavior:
+                //  - Out of deadband: velocity control only. Track vFF, keep z target aligned to current z.
+                //  - In deadband: hold altitude. Freeze z target and use outer loop to generate velocity setpoint.
+                if (inDeadband && !altHoldWasInDeadband) {
+                    // entering hold
+                    altHoldTargetZ = zEkf.z;
+                    altHoldVIntegral = 0.0f;
+                } else if (!inDeadband && altHoldWasInDeadband) {
+                    // leaving hold
+                    altHoldVIntegral = 0.0f;
+                }
+
+                if (!inDeadband) {
+                    altHoldTargetZ = zEkf.z;
+                }
+                altHoldWasInDeadband = inDeadband;
+
+                const float vP = inDeadband ? (kz * (altHoldTargetZ - zEkf.z)) : 0.0f;
+                float vSet = vP + vFF;
                 vSet = constrainf(vSet, -vmax, vmax);
 
                 const float vErr = vSet - zEkf.v;
@@ -574,8 +586,8 @@ void calculateEstimatedAltitude(void)
                 dbg_uP = uP;
                 dbg_uI = uI;
                 dbg_u = u;
-                dbg_vP = kz * (altHoldTargetZ - zEkf.z);
-                dbg_vFF = vStick;
+                dbg_vP = vP;
+                dbg_vFF = vFF;
                 dbg_vSet = vSet;
                 dbg_vErr = vErr;
                 dbg_r33 = zEkf.r33;
@@ -598,9 +610,11 @@ void calculateEstimatedAltitude(void)
     DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(zEkf.innovZ * 100.0f));  // cm
     DEBUG_SET(DEBUG_Z_EKF, 7, (int16_t)(zEkf.gateRejected ? 1 : 0));
 
-    // BARO altitude hold debug:
+    // BARO altitude hold debug (units shown after scaling below):
     // 0: uP (PWM), 1: uI (PWM), 2: u (PWM),
-    // 3: vP (cm/s), 4: vFF (cm/s), 5: vSet (cm/s), 6: vErr (cm/s),
+    // 3: vP (cm/s)  = kz * zErr      (deadband only; 0 out of deadband by design)
+    // 4: vFF (cm/s) = stickFF gain'd (out of deadband only; 0 in deadband by design)
+    // 5: vSet (cm/s), 6: vErr (cm/s),
     // 7: r33*100 (cos tilt)
     DEBUG_SET(DEBUG_BARO_ALTHOLD, 0, (int16_t)constrain(lrintf(dbg_uP), INT16_MIN, INT16_MAX));
     DEBUG_SET(DEBUG_BARO_ALTHOLD, 1, (int16_t)constrain(lrintf(dbg_uI), INT16_MIN, INT16_MAX));
