@@ -139,6 +139,7 @@
 #define PARAM_NAME_POSITION_EKF_R_CENTI "ekf_r_centi"
 #define PARAM_NAME_POSITION_EKF_GATE_SIGMA_X10 "ekf_gate_sigma_x10"
 #define PARAM_NAME_POSITION_EKF_ENABLE_ADAPT_R "ekf_enable_adapt_r"
+#ifdef USE_BARO_ALTHOLD
 #define PARAM_NAME_POSITION_ALT_HOLD_KZ_X100 "alt_hold_kz_x100"
 #define PARAM_NAME_POSITION_ALT_HOLD_KPV "alt_hold_kpv"
 #define PARAM_NAME_POSITION_ALT_HOLD_KIV "alt_hold_kiv"
@@ -148,6 +149,7 @@
 #define PARAM_NAME_POSITION_ALT_HOLD_THRUST_ZERO_PWM "alt_hold_thrust_zero_pwm"
 #define PARAM_NAME_POSITION_ALT_HOLD_HOVER_PWM "alt_hold_hover_pwm"
 #define PARAM_NAME_POSITION_ALT_HOLD_I_LIMIT_CMS "alt_hold_i_limit_cms"
+#endif
 #define PARAM_NAME_ANGLE_FEEDFORWARD "angle_feedforward"
 #define PARAM_NAME_ANGLE_FF_SMOOTHING_MS "angle_feedforward_smoothing_ms"
 #define PARAM_NAME_ANGLE_LIMIT "angle_limit"

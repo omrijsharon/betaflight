@@ -504,6 +504,7 @@ void calculateEstimatedAltitude(void)
 
 #ifdef USE_BARO
         // ---- 5b) Altitude hold (BARO_MODE) ----
+#ifdef USE_BARO_ALTHOLD
         if (FLIGHT_MODE(BARO_MODE) && haveBaroAlt) {
             const positionConfig_t *pcfg = positionConfig();
             const float mid = rxConfig()->midrc;
@@ -597,6 +598,7 @@ void calculateEstimatedAltitude(void)
             altHoldVIntegral = 0.0f;
             mixerSetThrottleAltitudeCorrection(0);
         }
+#endif // USE_BARO_ALTHOLD
 #endif
 
     // ---- 6) debug channels (guarded) ----

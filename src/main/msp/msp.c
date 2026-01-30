@@ -1405,6 +1405,7 @@ case MSP_NAME:
         }
         break;
 
+#ifdef USE_BARO_ALTHOLD
     case MSP_BARO_ALTHOLD_CONFIG:
         {
             const positionConfig_t *pcfg = positionConfig();
@@ -1421,6 +1422,7 @@ case MSP_NAME:
             sbufWriteU8(dst, rcControlsConfig()->alt_hold_fast_change);
         }
         break;
+#endif
 
     case MSP_PIDNAMES:
         for (const char *c = pidNames; *c; c++) {
@@ -2783,6 +2785,7 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
         }
         break;
 
+#ifdef USE_BARO_ALTHOLD
     case MSP_SET_BARO_ALTHOLD_CONFIG:
         {
             positionConfig_t *pcfg = positionConfigMutable();
@@ -2808,6 +2811,7 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             rcCfg->alt_hold_fast_change = constrain(sbufReadU8(src), 0, 1);
         }
         break;
+#endif
 
     case MSP_SET_MODE_RANGE:
         i = sbufReadU8(src);

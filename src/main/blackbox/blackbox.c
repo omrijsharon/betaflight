@@ -1554,6 +1554,7 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_R_CENTI, "%d",            positionConfig()->ekf_r_centi);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_GATE_SIGMA_X10, "%d",     positionConfig()->ekf_gate_sigma_x10);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_ENABLE_ADAPT_R, "%d",     positionConfig()->ekf_enable_adapt_r);
+#ifdef USE_BARO_ALTHOLD
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KZ_X100, "%d",       positionConfig()->alt_hold_kz_x100);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KPV, "%d",           positionConfig()->alt_hold_kpv);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KIV, "%d",           positionConfig()->alt_hold_kiv);
@@ -1563,6 +1564,7 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_THRUST_ZERO_PWM, "%d", positionConfig()->alt_hold_thrust_zero_pwm);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_HOVER_PWM, "%d", positionConfig()->alt_hold_hover_pwm);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_I_LIMIT_CMS, "%d", positionConfig()->alt_hold_i_limit_cms);
+#endif
 
 
 #ifdef USE_MAG
