@@ -18,13 +18,21 @@ typedef struct positionAltEKF_s {
     float P[4][4];  // covariance
 
     // process/measurement noises
-    float Qz;       // (m^2)    — usually 0
     float Qv;       // (m^2/s^2)
     float Qba;      // (m^2/s^4)
     float Qbb;      // (m^2/s)  - baro bias RW spectral density
     float R;        // (m^2)    — baro variance
 
     float R_eff;    // (m^2)    - effective baro variance after adaptation
+
+    // gating / robustness state
+    uint16_t rejectStreak;    // consecutive frames the baro Z gate would reject
+    float    recoveryRMult;   // exponential R multiplier for recovery (decays toward 1.0)
+    uint8_t  gateForced;      // 1 when update was forced due to recovery logic
+
+    float gateS;              // last innovation variance used for gating (m^2)
+    float gateLimit;          // last gate limit (m), i.e. gateSigma*sqrt(gateS)
+    float S_min;              // gating floor for innovation variance (m^2)
 
     // debug taps
     float aWorldZ;      // input accel in world-Z (m/s^2)
@@ -46,6 +54,18 @@ typedef struct positionConfig_s {
     uint16_t ekf_r_centi;            // R = (ekf_r_centi/100)^2     [ m^2 ]
     uint8_t  ekf_gate_sigma_x10;     // gate sigma = /10 (e.g. 30 -> 3.0σ)
     uint8_t  ekf_enable_adapt_r;     // 0/1 (optional, future use)
+
+    // Additional Z_EKF robustness tuning
+    uint16_t ekf_s_min_m2_x1000;               // S floor = val/1000 [m^2]
+    uint16_t ekf_reject_recovery_start_frames; // consecutive rejects before recovery triggers
+    uint16_t ekf_recovery_r_scale_x10;         // recovery R multiplier = val/10 (initial value; decays exponentially)
+    uint8_t  ekf_recovery_decay_tc_frames;     // recovery R decay time constant (frames); R_mult halves in ~0.7*tc
+    uint16_t ekf_step_innov_thresh_cm;         // innovation threshold for step handling (cm)
+    uint16_t ekf_step_rate_thresh_cms;         // baro rate threshold for step handling (cm/s)
+    uint16_t ekf_step_rate_filter_tau_ms;      // step detector rate LPF time constant (ms)
+    uint8_t  ekf_step_streak_frames;           // consecutive frames required before bb nudge
+    uint16_t ekf_step_bb_alpha_x1000;          // bb nudge gain = val/1000
+    uint16_t ekf_step_bb_max_adjust_cm;        // max bb nudge per event (cm)
 
     // --- Altitude hold tuning (BARO_MODE) ---
     uint16_t alt_hold_kz_x100;       // outer loop: vSet = kz * zErr  (kz = /100, 1/s)

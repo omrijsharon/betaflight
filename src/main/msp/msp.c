@@ -1402,6 +1402,18 @@ case MSP_NAME:
             sbufWriteU16(dst, pcfg->ekf_r_centi);
             sbufWriteU8(dst, pcfg->ekf_gate_sigma_x10);
             sbufWriteU8(dst, pcfg->ekf_enable_adapt_r);
+
+            // Additional robustness tuning (appended; older clients may ignore extra bytes)
+            sbufWriteU16(dst, pcfg->ekf_s_min_m2_x1000);
+            sbufWriteU16(dst, pcfg->ekf_reject_recovery_start_frames);
+            sbufWriteU8(dst, pcfg->ekf_recovery_decay_tc_frames);
+            sbufWriteU16(dst, pcfg->ekf_recovery_r_scale_x10);
+            sbufWriteU16(dst, pcfg->ekf_step_innov_thresh_cm);
+            sbufWriteU16(dst, pcfg->ekf_step_rate_thresh_cms);
+            sbufWriteU16(dst, pcfg->ekf_step_rate_filter_tau_ms);
+            sbufWriteU8(dst, pcfg->ekf_step_streak_frames);
+            sbufWriteU16(dst, pcfg->ekf_step_bb_alpha_x1000);
+            sbufWriteU16(dst, pcfg->ekf_step_bb_max_adjust_cm);
         }
         break;
 
@@ -2781,6 +2793,38 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             pcfg->ekf_r_centi = constrain(sbufReadU16(src), 10, 100);
             pcfg->ekf_gate_sigma_x10 = constrain(sbufReadU8(src), 10, 50);
             pcfg->ekf_enable_adapt_r = constrain(sbufReadU8(src), 0, 1);
+
+            // Backward compatible decode of appended fields (when present)
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_s_min_m2_x1000 = constrain(sbufReadU16(src), 1, 1000);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_reject_recovery_start_frames = constrain(sbufReadU16(src), 1, 500);
+            }
+            if (sbufBytesRemaining(src) >= 1) {
+                pcfg->ekf_recovery_decay_tc_frames = constrain(sbufReadU8(src), 1, 255);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_recovery_r_scale_x10 = constrain(sbufReadU16(src), 10, 5000);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_step_innov_thresh_cm = constrain(sbufReadU16(src), 0, 1000);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_step_rate_thresh_cms = constrain(sbufReadU16(src), 0, 5000);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_step_rate_filter_tau_ms = constrain(sbufReadU16(src), 0, 5000);
+            }
+            if (sbufBytesRemaining(src) >= 1) {
+                pcfg->ekf_step_streak_frames = constrain(sbufReadU8(src), 1, 255);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_step_bb_alpha_x1000 = constrain(sbufReadU16(src), 0, 1000);
+            }
+            if (sbufBytesRemaining(src) >= 2) {
+                pcfg->ekf_step_bb_max_adjust_cm = constrain(sbufReadU16(src), 0, 5000);
+            }
             positionUpdateAltEKFTunables();
         }
         break;

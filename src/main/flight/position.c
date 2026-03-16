@@ -31,7 +31,6 @@
 // ------------------ Local storage ------------------
 
 static float displayAltitudeCm = 0.0f;   // what OSD shows (cm)
-static float zeroedAltitudeCm  = 0.0f;   // relative altitude (cm), legacy interface
 
 #ifdef USE_VARIO
 static int16_t estimatedVario = 0;       // cm/s (from EKF.v, cosmetically filtered)
@@ -39,7 +38,6 @@ static int16_t estimatedVario = 0;       // cm/s (from EKF.v, cosmetically filte
 
 static pt2Filter_t altitudeLpf;          // cosmetic display LPF
 static pt2Filter_t altitudeDerivativeLpf;// cosmetic vario LPF
-static pt2Filter_t baroVarioLpf;         // baro-derived vario LPF (for altitude hold)
 
 // altitude hold (BARO_MODE)
 static bool altHoldActive = false;
@@ -58,11 +56,11 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 11);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 12);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
-    .altitude_source       = DEFAULT,
-    .altitude_prefer_baro  = 100,
+    .altitude_source       = DEFAULT,       // TODO: not yet used by Z_EKF; reserved for future GPS altitude fusion
+    .altitude_prefer_baro  = 100,          // TODO: not yet used by Z_EKF; reserved for future GPS/baro blending
     .altitude_lpf          = 300,   // 3.00 Hz
     .altitude_d_lpf        = 100,   // 1.00 Hz
     // EKF defaults:
@@ -72,6 +70,18 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .ekf_r_centi           = 25,    // 0.25 m baro measurement std
     .ekf_gate_sigma_x10    = 30,    // 3.0σ gate
     .ekf_enable_adapt_r    = 1,
+
+    // EKF robustness defaults:
+    .ekf_s_min_m2_x1000               = 40,   // 0.040 m^2 (sigma ~= 0.20 m)
+    .ekf_reject_recovery_start_frames = 30,
+    .ekf_recovery_r_scale_x10         = 500,  // 50.0x (initial R multiplier; decays exponentially)
+    .ekf_recovery_decay_tc_frames     = 20,   // decay time constant: R_mult halves in ~0.7*20 = 14 frames
+    .ekf_step_innov_thresh_cm         = 100,  // 1.00 m
+    .ekf_step_rate_thresh_cms         = 100,  // 1.00 m/s
+    .ekf_step_rate_filter_tau_ms      = 150,  // 0.15 s
+    .ekf_step_streak_frames           = 5,
+    .ekf_step_bb_alpha_x1000          = 100,  // 0.100
+    .ekf_step_bb_max_adjust_cm        = 300,  // 3.00 m
 
     // Altitude hold defaults (BARO_MODE)
     .alt_hold_kz_x100      = 80,    // 0.80 1/s
@@ -87,6 +97,22 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
 
 // ------------------ EKF helpers ------------------
 
+// Robustness helpers for the altitude EKF:
+//  - S_min prevents the Z gate from collapsing due to overconfidence / tiny R tuning (tunable via PG_POSITION).
+//  - P floors prevent numerical collapse that can lead to gate deadlock.
+static const float Z_EKF_PZ_MIN = (0.05f * 0.05f); // (m)^2
+static const float Z_EKF_PV_MIN = (0.05f * 0.05f); // (m/s)^2
+static const float Z_EKF_PBA_MIN = (0.10f * 0.10f); // (m/s^2)^2
+static const float Z_EKF_PBB_MIN = (0.10f * 0.10f); // (m)^2
+
+static inline void ekfCovarianceFloor(positionAltEKF_t *ekf)
+{
+    ekf->P[0][0] = MAX(ekf->P[0][0], Z_EKF_PZ_MIN);
+    ekf->P[1][1] = MAX(ekf->P[1][1], Z_EKF_PV_MIN);
+    ekf->P[2][2] = MAX(ekf->P[2][2], Z_EKF_PBA_MIN);
+    ekf->P[3][3] = MAX(ekf->P[3][3], Z_EKF_PBB_MIN);
+}
+
 void positionUpdateAltEKFTunables(void)
 {
     const positionConfig_t *pcfg = positionConfig();
@@ -100,6 +126,8 @@ void positionUpdateAltEKFTunables(void)
     zEkf.Qbb   = qbb * qbb;    // (m^2) per sec
     zEkf.R     = rstd * rstd;  // m^2
     zEkf.R_eff = zEkf.R;
+
+    zEkf.S_min = constrainf((positionConfig()->ekf_s_min_m2_x1000 / 1000.0f), 1e-6f, 10.0f);
 }
 
 static inline void ekfInit(positionAltEKF_t *ekf, float z0)
@@ -132,6 +160,11 @@ static inline void ekfInit(positionAltEKF_t *ekf, float z0)
     ekf->innovZ  = 0.0f;
     ekf->r33     = 1.0f;
     ekf->gateRejected = 0;
+    ekf->rejectStreak = 0;
+    ekf->recoveryRMult = 1.0f;
+    ekf->gateForced = 0;
+    ekf->gateS = 0.0f;
+    ekf->gateLimit = 0.0f;
 }
 
 static inline void ekfPredict(positionAltEKF_t *ekf, float aWorldZ, float dt)
@@ -196,6 +229,8 @@ static inline void ekfPredict(positionAltEKF_t *ekf, float aWorldZ, float dt)
         }
     }
 
+    ekfCovarianceFloor(ekf);
+
     ekf->aWorldZ = aWorldZ;
 }
 
@@ -207,7 +242,8 @@ static inline void ekfUpdateZ(positionAltEKF_t *ekf, float zMeas, float R)
     const float P20 = ekf->P[2][0], P23 = ekf->P[2][3];
     const float P30 = ekf->P[3][0], P33 = ekf->P[3][3];
 
-    const float S = P00 + P03 + P30 + P33 + R; // HPH^T + R, with H=[1 0 0 1]
+    const float Sraw = P00 + P03 + P30 + P33 + R; // HPH^T + R, with H=[1 0 0 1]
+    const float S = MAX(ekf->S_min, Sraw);
     const float invS = 1.0f / MAX(1e-9f, S);
 
     const float Kz  = (P00 + P03) * invS;
@@ -262,62 +298,8 @@ static inline void ekfUpdateZ(positionAltEKF_t *ekf, float zMeas, float R)
             ekf->P[i][j] = 0.5f * (Pn[i][j] + Pn[j][i]);
         }
     }
-}
 
-static inline void ekfUpdateV(positionAltEKF_t *ekf, float vMeas, float Rv)
-{
-    // Measurement: vMeas = v + noise, H=[0 1 0 0]
-    const float S = ekf->P[1][1] + Rv;
-    const float invS = 1.0f / MAX(1e-9f, S);
-
-    const float Kz  = ekf->P[0][1] * invS;
-    const float Kv  = ekf->P[1][1] * invS;
-    const float Kba = ekf->P[2][1] * invS;
-    const float Kbb = ekf->P[3][1] * invS;
-
-    const float innov = vMeas - ekf->v;
-
-    ekf->z  += Kz  * innov;
-    ekf->v  += Kv  * innov;
-    ekf->ba += Kba * innov;
-    ekf->bb += Kbb * innov;
-
-    const float K[4] = { Kz, Kv, Kba, Kbb };
-
-    float A[4][4] = {
-        { 1.0f, -Kz,  0.0f, 0.0f },
-        { 0.0f, 1.0f - Kv, 0.0f, 0.0f },
-        { 0.0f, -Kba, 1.0f, 0.0f },
-        { 0.0f, -Kbb, 0.0f, 1.0f },
-    };
-
-    float AP[4][4] = { { 0 } };
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            float s = 0.0f;
-            for (int k = 0; k < 4; k++) {
-                s += A[i][k] * ekf->P[k][j];
-            }
-            AP[i][j] = s;
-        }
-    }
-
-    float Pn[4][4] = { { 0 } };
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            float s = 0.0f;
-            for (int k = 0; k < 4; k++) {
-                s += AP[i][k] * A[j][k];
-            }
-            Pn[i][j] = s + (K[i] * Rv * K[j]);
-        }
-    }
-
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            ekf->P[i][j] = 0.5f * (Pn[i][j] + Pn[j][i]);
-        }
-    }
+    ekfCovarianceFloor(ekf);
 }
 
 // ------------------ Position task ------------------
@@ -338,10 +320,6 @@ void positionInit(void)
     const float altitudeDerivativeGain     = pt2FilterGain(altitudeDerivativeCutoffHz, sampleTimeS);
     pt2FilterInit(&altitudeDerivativeLpf, altitudeDerivativeGain);
 
-    // baro-derived vario is only used as a slow-trim measurement; keep it conservative
-    const float baroVarioCutoffHz = MIN(3.0f, MAX(0.3f, altitudeDerivativeCutoffHz));
-    pt2FilterInit(&baroVarioLpf, pt2FilterGain(baroVarioCutoffHz, sampleTimeS));
-
     altHoldActive = false;
     altHoldTargetZ = 0.0f;
     altHoldVIntegral = 0.0f;
@@ -356,8 +334,13 @@ void calculateEstimatedAltitude(void)
     static bool  wasArmed = false;
     static float baroAltOffsetCm = 0.0f;
     static float newBaroAltOffsetCm = 0.0f;
+    static bool  haveBaroAltOffsetInit = false;
     static float prevZMeas_m = 0.0f;
     static bool  havePrevZMeas = false;
+    static int8_t baroStepSign = 0;
+    static uint8_t baroStepStreak = 0;
+    static float baroStepPrevAbsInnov = 0.0f;
+    static float baroStepZRateFilt_mps = 0.0f;
 
     // BARO altitude hold debug taps (DEBUG_BARO_ALTHOLD)
     float dbg_uP = 0.0f;      // PWM
@@ -392,15 +375,21 @@ void calculateEstimatedAltitude(void)
     const float aWorldZ = rMat[2][0]*ax + rMat[2][1]*ay + rMat[2][2]*az - 9.80665f;
     zEkf.r33 = rMat[2][2]; // for debug
 
-    const float dt = HZ_TO_INTERVAL(TASK_ALTITUDE_RATE_HZ);
+    const float dtNom = HZ_TO_INTERVAL(TASK_ALTITUDE_RATE_HZ);
+    float dt = dtNom;
+    const timeDelta_t dtUs = getTaskDeltaTimeUs(TASK_ALTITUDE);
+    if (dtUs > 0) {
+        dt = dtUs * 1e-6f;
+    }
+    dt = constrainf(dt, 0.5f * dtNom, 2.0f * dtNom);
 
-    // Allow bench verification of gravity compensation and attitude coupling while disarmed.
-    // When debug_mode = Z_EKF:
-    //  - debug[0] shows r33*100
-    //  - debug[1] shows aWorldZ*100 (centi m/s^2), should be ~0 at rest/level
-    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(zEkf.r33 * 100.0f));
-    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(aWorldZ * 100.0f));
+    // When debug_mode = Z_EKF (armed):
+    //  0: aWorldZ*100 (centi m/s^2), 1: zMeas(cm), 2: z(cm), 3: v(cm/s),
+    //  4: sqrt(R_eff)*100 (cm), 5: innov(cm), 6: limit(cm), 7: gate state
+    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(aWorldZ * 100.0f));
     if (!ARMING_FLAG(ARMED)) {
+        DEBUG_SET(DEBUG_Z_EKF, 0, 0);
+        DEBUG_SET(DEBUG_Z_EKF, 1, 0);
         DEBUG_SET(DEBUG_Z_EKF, 2, 0);
         DEBUG_SET(DEBUG_Z_EKF, 3, 0);
         DEBUG_SET(DEBUG_Z_EKF, 4, 0);
@@ -409,28 +398,55 @@ void calculateEstimatedAltitude(void)
         DEBUG_SET(DEBUG_Z_EKF, 7, 0);
     }
 
-    ekfPredict(&zEkf, aWorldZ, dt);
-
     // ---- 2) arm/disarm handling & zeroing ----
     if (!ARMING_FLAG(ARMED)) {
-        if (wasArmed) {
-            wasArmed = false;
+        // While disarmed the EKF state is meaningless (it will be re-initialized on arm).
+        // Reset the EKF to the current baro reading each frame so it doesn't drift open-loop.
+        // No predict step: it would be immediately overwritten by ekfInit.
+        if (haveBaroAlt) {
+            float z0 = metersFromCm(baroAltCm - newBaroAltOffsetCm);
+            ekfInit(&zEkf, z0);
+        } else {
+            ekfInit(&zEkf, 0.0f);
         }
 
-        newBaroAltOffsetCm = 0.2f * baroAltCm + 0.8f * newBaroAltOffsetCm;
-        displayAltitudeCm  = baroAltCm - baroAltOffsetCm;   // show recent baro zero
-        zeroedAltitudeCm   = 0.0f;
+        if (wasArmed) {
+            wasArmed = false;
+            haveBaroAltOffsetInit = false;
+        }
+
+        if (haveBaroAlt) {
+            if (!haveBaroAltOffsetInit) {
+                newBaroAltOffsetCm = baroAltCm;
+                haveBaroAltOffsetInit = true;
+            } else {
+                newBaroAltOffsetCm = 0.2f * baroAltCm + 0.8f * newBaroAltOffsetCm;
+            }
+        }
+        // While disarmed, show altitude relative to the current (disarmed) baro zero estimate.
+        // This avoids confusing "display" values before baroAltOffsetCm is latched on arming.
+        displayAltitudeCm  = haveBaroAlt ? (baroAltCm - newBaroAltOffsetCm) : 0.0f;
 
         altHoldActive = false;
         altHoldVIntegral = 0.0f;
         altHoldWasInDeadband = true;
         mixerSetThrottleAltitudeCorrection(0);
         havePrevZMeas = false;
+        baroStepSign = 0;
+        baroStepStreak = 0;
+        baroStepPrevAbsInnov = 0.0f;
+        baroStepZRateFilt_mps = 0.0f;
+        zEkf.rejectStreak = 0;
+        zEkf.recoveryRMult = 1.0f;
+        zEkf.gateForced = 0;
 
     } else {
         // armed
+        ekfPredict(&zEkf, aWorldZ, dt);
+
         if (!wasArmed) {
             baroAltOffsetCm = newBaroAltOffsetCm;
+            haveBaroAltOffsetInit = false;
             wasArmed = true;
             float z0m = haveBaroAlt ? metersFromCm(baroAltCm - baroAltOffsetCm) : 0.0f;
             ekfInit(&zEkf, z0m);
@@ -452,8 +468,29 @@ void calculateEstimatedAltitude(void)
 
         // ---- 4) EKF update with baro (if valid & gated) ----
         if (zMeasValid) {
+            const positionConfig_t *pcfg = positionConfig();
+
+            // Recovery parameters (frames at TASK_ALTITUDE_RATE_HZ)
+            const uint16_t rejectRecoveryStartFrames = MAX((uint16_t)1, pcfg->ekf_reject_recovery_start_frames);
+            const float    recoveryRScale = constrainf((pcfg->ekf_recovery_r_scale_x10 / 10.0f), 1.0f, 1000.0f);
+            const uint8_t  recoveryDecayTc = (uint8_t)constrain(pcfg->ekf_recovery_decay_tc_frames, 1, 255);
+            // Exponential decay factor per frame: exp(-1/tc).  Pre-compute once.
+            const float    recoveryDecayAlpha = expf(-1.0f / (float)recoveryDecayTc);
+
+            // Baro step handling (windows/pressure steps): if innovation is large and the baro is stepping fast,
+            // adjust bb directly so the filter doesn't deadlock on gating.
+            const float    stepInnovThresh_m = MAX(0.0f, pcfg->ekf_step_innov_thresh_cm / 100.0f);
+            const float    stepRateThresh_mps = MAX(0.0f, pcfg->ekf_step_rate_thresh_cms / 100.0f);
+            const uint16_t stepPersistRejectFrames = 10; // allow step handling even after the initial spike
+            const uint8_t  stepStreakFrames = (uint8_t)constrain(pcfg->ekf_step_streak_frames, 1, 255);
+            const float    stepBbAlpha = constrainf((pcfg->ekf_step_bb_alpha_x1000 / 1000.0f), 0.0f, 1.0f);
+            const float    stepBbMaxAdjust_m = MAX(0.0f, pcfg->ekf_step_bb_max_adjust_cm / 100.0f);
+            const float    stepPbbBoost = 0.50f; // (m)^2
+            const float    stepInnovNotShrinkingEps_m = 0.05f;
+            const float    stepRateFiltTau_s = MAX(0.0f, pcfg->ekf_step_rate_filter_tau_ms / 1000.0f);
+
             float R = zEkf.R;
-            if (positionConfig()->ekf_enable_adapt_r) {
+            if (pcfg->ekf_enable_adapt_r) {
                 // Inflate baro variance when tilted or dynamically accelerating.
                 // This helps reduce false altitude changes from airflow / pressure disturbances during motion.
                 const float r33 = constrainf(fabsf(zEkf.r33), 0.2f, 1.0f);
@@ -461,31 +498,130 @@ void calculateEstimatedAltitude(void)
                 const float accelScale = 1.0f + 0.20f * MIN(5.0f, fabsf(aWorldZ)); // mild inflation on strong vertical accel
                 R *= MIN(25.0f, tiltScale * accelScale);
             }
-            zEkf.R_eff = R;
 
-            const float S = zEkf.P[0][0] + zEkf.P[0][3] + zEkf.P[3][0] + zEkf.P[3][3] + R;
-            const float innov = zMeas_m - (zEkf.z + zEkf.bb);
-            const float gateSigma = positionConfig()->ekf_gate_sigma_x10 / 10.0f;
-            const float limit = gateSigma * sqrtf(MAX(1e-9f, S));
-            zEkf.gateRejected = (fabsf(innov) > limit) ? 1 : 0;
-            if (!zEkf.gateRejected) {
-                ekfUpdateZ(&zEkf, zMeas_m, R);
+            const float zRateRaw_mps = havePrevZMeas ? ((zMeas_m - prevZMeas_m) / dt) : 0.0f;
+            if (!havePrevZMeas) {
+                baroStepZRateFilt_mps = 0.0f;
+            } else {
+                const float alpha = constrainf(dt / (stepRateFiltTau_s + dt), 0.0f, 1.0f);
+                baroStepZRateFilt_mps += alpha * (zRateRaw_mps - baroStepZRateFilt_mps);
+            }
+            float innov = zMeas_m - (zEkf.z + zEkf.bb);
+            float absInnov = fabsf(innov);
+            const float gateSigma = pcfg->ekf_gate_sigma_x10 / 10.0f;
 
-                // Optional: use differentiated baro as a slow velocity trim when baro is trusted.
-                if (havePrevZMeas) {
-                    const float vBaroRaw = (zMeas_m - prevZMeas_m) / dt;
-                    const float vBaro = pt2FilterApply(&baroVarioLpf, vBaroRaw);
-                    if (fabsf(zEkf.r33) > 0.80f) {
-                        float Rv = 0.50f * 0.50f; // (m/s)^2
-                        if (positionConfig()->ekf_enable_adapt_r) {
-                            const float r33 = constrainf(fabsf(zEkf.r33), 0.2f, 1.0f);
-                            Rv *= MIN(10.0f, 1.0f / (r33 * r33));
-                        }
-                        ekfUpdateV(&zEkf, vBaro, Rv);
-                    }
+            // Nominal gate (pre-recovery): use an S floor to avoid permanent rejection deadlock.
+            float S = zEkf.P[0][0] + zEkf.P[0][3] + zEkf.P[3][0] + zEkf.P[3][3] + R;
+            S = MAX(zEkf.S_min, S);
+            float limit = gateSigma * sqrtf(MAX(1e-9f, S));
+            bool gateRejectedNominal = (fabsf(innov) > limit);
+
+            const bool alreadyRecovering = (zEkf.recoveryRMult > 1.01f);
+            if (!alreadyRecovering) {
+                if (gateRejectedNominal) {
+                    zEkf.rejectStreak = (zEkf.rejectStreak == UINT16_MAX) ? UINT16_MAX : (uint16_t)(zEkf.rejectStreak + 1);
+                } else {
+                    zEkf.rejectStreak = 0;
                 }
             }
-            zEkf.innovZ = innov; // keep for debug
+
+            // Baro step handling via bb when gating is rejecting.
+            if (gateRejectedNominal && havePrevZMeas && (absInnov > stepInnovThresh_m) &&
+                ((fabsf(baroStepZRateFilt_mps) > stepRateThresh_mps) || (zEkf.rejectStreak >= stepPersistRejectFrames))) {
+                const bool innovNotShrinking = (baroStepPrevAbsInnov <= 0.0f) || (absInnov >= (baroStepPrevAbsInnov - stepInnovNotShrinkingEps_m));
+                baroStepPrevAbsInnov = absInnov;
+
+                if (!innovNotShrinking) {
+                    baroStepStreak = 0;
+                    baroStepSign = 0;
+                }
+
+                const int8_t sign = (innov >= 0.0f) ? 1 : -1;
+                if (innovNotShrinking && (sign == baroStepSign)) {
+                    baroStepStreak = (baroStepStreak == 255) ? 255 : (uint8_t)(baroStepStreak + 1);
+                } else {
+                    baroStepSign = sign;
+                    baroStepStreak = innovNotShrinking ? 1 : 0;
+                }
+
+                if (baroStepStreak >= stepStreakFrames) {
+                    const float bbAdjust = constrainf(stepBbAlpha * innov, -stepBbMaxAdjust_m, stepBbMaxAdjust_m);
+                    zEkf.bb += bbAdjust;
+                    zEkf.P[3][3] += stepPbbBoost;
+                    ekfCovarianceFloor(&zEkf);
+                    baroStepStreak = 0;
+
+                    // Recompute innovation after bb adjustment.
+                    innov = zMeas_m - (zEkf.z + zEkf.bb);
+                    absInnov = fabsf(innov);
+                    S = zEkf.P[0][0] + zEkf.P[0][3] + zEkf.P[3][0] + zEkf.P[3][3] + R;
+                    S = MAX(zEkf.S_min, S);
+                    limit = gateSigma * sqrtf(MAX(1e-9f, S));
+                    gateRejectedNominal = (absInnov > limit);
+
+                    // If the bb nudge brought us back into the gate, clear the reject streak to avoid
+                    // immediately entering recovery due to stale reject history.
+                    if (!gateRejectedNominal) {
+                        zEkf.rejectStreak = 0;
+                    }
+                }
+            } else {
+                baroStepStreak = 0;
+                baroStepPrevAbsInnov = 0.0f;
+                baroStepSign = 0;
+            }
+
+            // Recovery: if gating has been rejecting for too long, kick the R multiplier
+            // to recoveryRScale and let it decay exponentially toward 1.0 each frame.
+            // While recoveryRMult > 1, updates are forced (gate bypassed) with inflated R,
+            // giving the filter a smooth, decreasing leash back to normal confidence.
+            if (gateRejectedNominal && (zEkf.rejectStreak >= rejectRecoveryStartFrames) && !alreadyRecovering) {
+                zEkf.recoveryRMult = recoveryRScale;
+                zEkf.rejectStreak = 0;
+            }
+
+            // Decay the recovery multiplier toward 1.0 every frame.
+            if (zEkf.recoveryRMult > 1.01f) {
+                // mult(k+1) = 1 + (mult(k) - 1) * alpha,  where alpha = exp(-1/tc)
+                zEkf.recoveryRMult = 1.0f + (zEkf.recoveryRMult - 1.0f) * recoveryDecayAlpha;
+                if (zEkf.recoveryRMult < 1.01f) {
+                    zEkf.recoveryRMult = 1.0f;
+                }
+            }
+
+            // If the nominal gate is healthy, snap recovery off immediately.
+            if (!gateRejectedNominal) {
+                zEkf.recoveryRMult = 1.0f;
+            }
+
+            const bool forceUpdate = (zEkf.recoveryRMult > 1.01f);
+            zEkf.gateForced = forceUpdate ? 1 : 0;
+
+            bool gateRejectedFinal = gateRejectedNominal;
+            if (forceUpdate) {
+                R *= zEkf.recoveryRMult;
+                gateRejectedFinal = false;
+            }
+
+            // Store final gate values for debug (before the update modifies P).
+            zEkf.R_eff = R;
+            zEkf.innovZ = innov;
+            zEkf.gateRejected = gateRejectedFinal ? 1 : 0;
+
+            // Compute gate S and limit from pre-update P for consistent debug output.
+            zEkf.gateS = zEkf.P[0][0] + zEkf.P[0][3] + zEkf.P[3][0] + zEkf.P[3][3] + R;
+            zEkf.gateS = MAX(zEkf.S_min, zEkf.gateS);
+            zEkf.gateLimit = gateSigma * sqrtf(MAX(1e-9f, zEkf.gateS));
+
+            if (!gateRejectedFinal) {
+                ekfUpdateZ(&zEkf, zMeas_m, R);
+                // Note: baro-derived velocity (differentiated baro) is NOT fused here.
+                // The Z update already corrects velocity via the cross-covariance (Kv * innov).
+                // Fusing differentiated baro as a separate velocity measurement would double-count
+                // the same baro information, making P artificially small (overconfident velocity).
+                // This is critical for altitude hold: accurate velocity uncertainty drives proper
+                // Kalman gain balance between accel prediction and baro correction.
+            }
 
             prevZMeas_m = zMeas_m;
             havePrevZMeas = true;
@@ -519,7 +655,10 @@ void calculateEstimatedAltitude(void)
             const bool inDeadband = (stickAdj == 0.0f);
 
             if ((stickAdj != 0.0f) && !rcControlsConfig()->alt_hold_fast_change) {
-                // Stick moved out of deadband: disable altitude hold until re-centered.
+                // alt_hold_fast_change OFF (default): altitude hold is disabled entirely when
+                // the throttle stick leaves the deadband, giving direct throttle control.
+                // alt_hold_fast_change ON: altitude hold stays active and the target altitude
+                // changes proportionally to stick deflection (velocity-command mode).
                 altHoldActive = false;
                 altHoldVIntegral = 0.0f;
                 altHoldWasInDeadband = true;
@@ -581,6 +720,8 @@ void calculateEstimatedAltitude(void)
                 }
 
                 u = constrainf(u, -maxCorr, maxCorr);
+                // Note: tilt compensation (1/cos(tilt)) for the throttle correction is applied
+                // downstream in mixer.c, not here.  See mixerApplyThrottleAltitudeCorrection().
                 mixerSetThrottleAltitudeCorrection(lrintf(u));
 
                 // debug outputs (gain*term) for BARO altitude hold
@@ -602,15 +743,23 @@ void calculateEstimatedAltitude(void)
 #endif
 
     // ---- 6) debug channels (guarded) ----
+    // Note: still inside the armed `else` branch, so zMeas_m (declared above) is in scope.
     // Debug is int16_t: scale for resolution
-    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(zEkf.r33 * 100.0f));     // 0..100
-    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(aWorldZ * 100.0f));      // centi m/s^2
-    DEBUG_SET(DEBUG_Z_EKF, 2, lrintf(zMeas_m * 100.0f));      // cm
-    DEBUG_SET(DEBUG_Z_EKF, 3, lrintf(zEkf.z * 100.0f));       // cm
-    DEBUG_SET(DEBUG_Z_EKF, 4, lrintf(zEkf.v * 100.0f));       // cm/s
-    DEBUG_SET(DEBUG_Z_EKF, 5, lrintf(zEkf.ba * 100.0f));      // centi m/s^2
-    DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(zEkf.innovZ * 100.0f));  // cm
-    DEBUG_SET(DEBUG_Z_EKF, 7, (int16_t)(zEkf.gateRejected ? 1 : 0));
+    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(aWorldZ * 100.0f));                    // centi m/s^2
+    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(zMeas_m * 100.0f));                    // cm
+    DEBUG_SET(DEBUG_Z_EKF, 2, lrintf(zEkf.z * 100.0f));                     // cm
+    DEBUG_SET(DEBUG_Z_EKF, 3, lrintf(zEkf.v * 100.0f));                     // cm/s
+    DEBUG_SET(DEBUG_Z_EKF, 4, lrintf(sqrtf(MAX(0.0f, zEkf.R_eff)) * 100.0f)); // cm
+    DEBUG_SET(DEBUG_Z_EKF, 5, lrintf(zEkf.innovZ * 100.0f));                // cm
+    DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(zEkf.gateLimit * 100.0f));             // cm
+    int16_t gateState = 0;
+    if (zEkf.gateForced) {
+        gateState = (int16_t)constrain((int32_t)zEkf.rejectStreak, 1, INT16_MAX);
+        gateState = (int16_t)(-gateState);
+    } else if (zEkf.gateRejected) {
+        gateState = (int16_t)constrain((int32_t)zEkf.rejectStreak, 1, INT16_MAX);
+    }
+    DEBUG_SET(DEBUG_Z_EKF, 7, gateState);
 
     // BARO altitude hold debug (units shown after scaling below):
     // 0: uP (PWM), 1: uI (PWM), 2: u (PWM),

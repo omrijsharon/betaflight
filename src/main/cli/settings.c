@@ -1784,6 +1784,16 @@ const clivalue_t valueTable[] = {
     { "ekf_r_centi",             VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 100 },  PG_POSITION, offsetof(positionConfig_t, ekf_r_centi) },           // (R = (val/100)^2)
     { "ekf_gate_sigma_x10",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10,  50 },  PG_POSITION, offsetof(positionConfig_t, ekf_gate_sigma_x10) },    // sigma = val/10
     { "ekf_enable_adapt_r",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  0,   1 },  PG_POSITION, offsetof(positionConfig_t, ekf_enable_adapt_r) },
+    { "ekf_s_min_m2_x1000",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   1, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_s_min_m2_x1000) },    // S_min = val/1000 [m^2]
+    { "ekf_reject_recovery_start_frames", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   1,  500 }, PG_POSITION, offsetof(positionConfig_t, ekf_reject_recovery_start_frames) },
+    { "ekf_recovery_decay_tc_frames",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {   1,  255 }, PG_POSITION, offsetof(positionConfig_t, ekf_recovery_decay_tc_frames) },
+    { "ekf_recovery_r_scale_x10",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  10, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_recovery_r_scale_x10) }, // = val/10
+    { "ekf_step_innov_thresh_cm",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_innov_thresh_cm) },
+    { "ekf_step_rate_thresh_cms",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_rate_thresh_cms) },
+    { "ekf_step_rate_filter_tau_ms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_rate_filter_tau_ms) },
+    { "ekf_step_streak_frames",          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {   1,  255 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_streak_frames) },
+    { "ekf_step_bb_alpha_x1000",         VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_bb_alpha_x1000) },
+    { "ekf_step_bb_max_adjust_cm",       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_bb_max_adjust_cm) },
     // Altitude hold tuning (BARO_MODE)
 #ifdef USE_BARO_ALTHOLD
     { "alt_hold_kz_x100",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1, 300 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kz_x100) },       // kz = val/100 [1/s]
