@@ -165,3 +165,46 @@
 #define SYM_GPS_DEGREE              SYM_STICK_OVERLAY_SPRITE_HIGH  // kind of looks like the degree symbol
 #define SYM_GPS_MINUTE              0x27 // '
 #define SYM_GPS_SECOND              0x22 // "
+
+#ifdef USE_FINAL
+// High-resolution crosshair phases reusing the left 9 columns of the old logo block.
+#define SYM_XHAIR_PHASE_X0_Y0_TL    0xA0
+#define SYM_XHAIR_PHASE_X0_Y0_TC    0xA1
+#define SYM_XHAIR_PHASE_X0_Y0_TR    0xA2
+#define SYM_XHAIR_PHASE_X1_Y0_TL    0xA3
+#define SYM_XHAIR_PHASE_X1_Y0_TC    0xA4
+#define SYM_XHAIR_PHASE_X1_Y0_TR    0xA5
+#define SYM_XHAIR_PHASE_X0_Y1_TL    0xA6
+#define SYM_XHAIR_PHASE_X0_Y1_TC    0xA7
+#define SYM_XHAIR_PHASE_X0_Y1_TR    0xA8
+
+#define SYM_XHAIR_PHASE_X0_Y0_BL    0xB8
+#define SYM_XHAIR_PHASE_X0_Y0_BC    0xB9
+#define SYM_XHAIR_PHASE_X0_Y0_BR    0xBA
+#define SYM_XHAIR_PHASE_X1_Y0_BL    0xBB
+#define SYM_XHAIR_PHASE_X1_Y0_BC    0xBC
+#define SYM_XHAIR_PHASE_X1_Y0_BR    0xBD
+#define SYM_XHAIR_PHASE_X0_Y1_BL    0xBE
+#define SYM_XHAIR_PHASE_X0_Y1_BC    0xBF
+#define SYM_XHAIR_PHASE_X0_Y1_BR    0xC0
+
+#define SYM_XHAIR_PHASE_X1_Y1_TL    0xD0
+#define SYM_XHAIR_PHASE_X1_Y1_TC    0xD1
+#define SYM_XHAIR_PHASE_X1_Y1_TR    0xD2
+#define SYM_XHAIR_PHASE_X0_Y2_TL    0xD3
+#define SYM_XHAIR_PHASE_X0_Y2_TC    0xD4
+#define SYM_XHAIR_PHASE_X0_Y2_TR    0xD5
+#define SYM_XHAIR_PHASE_X1_Y2_TL    0xD6
+#define SYM_XHAIR_PHASE_X1_Y2_TC    0xD7
+#define SYM_XHAIR_PHASE_X1_Y2_TR    0xD8
+
+#define SYM_XHAIR_PHASE_X1_Y1_BL    0xE8
+#define SYM_XHAIR_PHASE_X1_Y1_BC    0xE9
+#define SYM_XHAIR_PHASE_X1_Y1_BR    0xEA
+#define SYM_XHAIR_PHASE_X0_Y2_BL    0xEB
+#define SYM_XHAIR_PHASE_X0_Y2_BC    0xEC
+#define SYM_XHAIR_PHASE_X0_Y2_BR    0xED
+#define SYM_XHAIR_PHASE_X1_Y2_BL    0xEE
+#define SYM_XHAIR_PHASE_X1_Y2_BC    0xEF
+#define SYM_XHAIR_PHASE_X1_Y2_BR    0xF0
+#endif

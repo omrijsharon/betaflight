@@ -2221,6 +2221,34 @@ case MSP_NAME:
         sbufWriteU8(dst, rtcDateTimeIsSet);
 
         break;
+#ifdef USE_FINAL
+    case MSP_CAMERA_INFO:
+        // Placeholder values until camera-lock state is wired into the FC.
+        sbufWriteU16(dst, 0); // width_px
+        sbufWriteU16(dst, 0); // height_px
+        sbufWriteU32(dst, 0); // fx_px_x1000
+        sbufWriteU32(dst, 0); // fy_px_x1000
+        sbufWriteU32(dst, 0); // cx_px_x1000
+        sbufWriteU32(dst, 0); // cy_px_x1000
+        sbufWriteU8(dst, 0);  // hfov_deg
+        sbufWriteU8(dst, 0);  // vfov_deg
+        sbufWriteU8(dst, 0);  // tilt_angle_deg
+        sbufWriteU8(dst, 0);  // orientation
+        sbufWriteU16(dst, 0); // lock_rate_hz
+        sbufWriteU8(dst, 0);  // flags
+        break;
+    case MSP_CAMERA_GET_LOCK:
+        sbufWriteU8(dst, 0);  // flags
+        sbufWriteU16(dst, 0); // x_px
+        sbufWriteU16(dst, 0); // y_px
+        break;
+    case MSP_CAMERA_LOCK:
+        sbufWriteU8(dst, 0);  // flags
+        sbufWriteU16(dst, 0); // x_px
+        sbufWriteU16(dst, 0); // y_px
+        sbufWriteU16(dst, 0); // age_ms
+        break;
+#endif
 #ifdef USE_RTC_TIME
     case MSP_RTC:
         {

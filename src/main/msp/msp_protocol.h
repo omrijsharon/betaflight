@@ -238,6 +238,11 @@
 #define MSP_SET_OSD_CANVAS              188 // in message           Set osd canvas size COLSxROWS
 #define MSP_OSD_CANVAS                  189 // out message          Get osd canvas size COLSxROWS
 
+// Custom camera lock messages (private fork)
+#define MSP_CAMERA_INFO                 190 // out message          Get active camera geometry / intrinsics / FOV / orientation / health
+#define MSP_CAMERA_GET_LOCK             191 // out message          Get current raw camera lock result
+#define MSP_CAMERA_LOCK                 192 // out message          Get FC-cached camera lock state
+
 //
 // Multwii original MSP commands
 //

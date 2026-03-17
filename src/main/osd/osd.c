@@ -118,7 +118,7 @@ const char * const osdTimerSourceNames[] = {
 };
 
 #define OSD_LOGO_ROWS 4
-#define OSD_LOGO_COLS 24
+#define OSD_LOGO_COLS 15
 
 // Things in both OSD and CMS
 
@@ -466,8 +466,8 @@ void pgResetFn_osdElementConfig(osdElementConfig_t *osdElementConfig)
 static void osdDrawLogo(int x, int y)
 {
     // display logo and help
-    int fontOffset = 160;
     for (int row = 0; row < OSD_LOGO_ROWS; row++) {
+        int fontOffset = 160 + row * 24 + 9;
         for (int column = 0; column < OSD_LOGO_COLS; column++) {
             if (fontOffset <= SYM_END_OF_FONT)
                 displayWriteChar(osdDisplayPort, x + column, y + row, DISPLAYPORT_SEVERITY_NORMAL, fontOffset++);
