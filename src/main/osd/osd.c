@@ -1542,6 +1542,9 @@ void osdUpdate(timeUs_t currentTimeUs)
             } else
 #endif // USE_SPEC_PREARM_SCREEN
             {
+#ifdef USE_FINAL
+                osdDrawCameraLockOverlay(osdDisplayPort, currentTimeUs);
+#endif
                 osdState = OSD_STATE_COMMIT;
             }
         }
@@ -1563,6 +1566,9 @@ void osdUpdate(timeUs_t currentTimeUs)
                     } else
 #endif // USE_SPEC_PREARM_SCREEN
                     {
+#ifdef USE_FINAL
+                        osdDrawCameraLockOverlay(osdDisplayPort, currentTimeUs);
+#endif
                         osdState = OSD_STATE_COMMIT;
                     }
                 }

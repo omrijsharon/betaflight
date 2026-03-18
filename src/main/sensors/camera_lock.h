@@ -28,6 +28,7 @@
 #ifdef USE_FINAL
 
 #define CAMERA_LOCK_INTRINSIC_SCALE          1000.0f
+#define CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS 100
 #define CAMERA_LOCK_INFO_FLAG_VALID            (1U << 0)
 #define CAMERA_LOCK_INFO_FLAG_CROPPED          (1U << 1)
 #define CAMERA_LOCK_INFO_FLAG_INTRINSICS_VALID (1U << 2)
@@ -83,15 +84,15 @@ float cameraLockGetFyPx(void);
 float cameraLockGetCxPx(void);
 float cameraLockGetCyPx(void);
 
-void cameraLockSetRawState(const cameraLockRawState_t *state, timeMs_t currentTimeMs);
-void cameraLockClear(timeMs_t currentTimeMs);
+void cameraLockSetRawState(const cameraLockRawState_t *state, timeUs_t currentTimeUs);
+void cameraLockClear(timeUs_t currentTimeUs);
 
-void cameraLockGetState(cameraLockState_t *state, timeMs_t currentTimeMs, uint16_t freshnessThresholdMs);
+void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16_t freshnessThresholdMs);
 void cameraLockGetRawState(cameraLockRawState_t *state);
 
 bool cameraLockHasDetection(void);
 bool cameraLockIsHealthy(void);
-bool cameraLockIsFresh(timeMs_t currentTimeMs, uint16_t freshnessThresholdMs);
-uint16_t cameraLockGetAgeMs(timeMs_t currentTimeMs);
+bool cameraLockIsFresh(timeUs_t currentTimeUs, uint16_t freshnessThresholdMs);
+uint16_t cameraLockGetAgeMs(timeUs_t currentTimeUs);
 
 #endif

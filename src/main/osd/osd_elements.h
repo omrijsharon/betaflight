@@ -69,6 +69,9 @@ void osdSyncBlink(timeUs_t currentTimeUs);
 void osdResetAlarms(void);
 void osdUpdateAlarms(void);
 bool osdElementsNeedAccelerometer(void);
+#ifdef USE_FINAL
+void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTimeUs);
+#endif
 #ifdef USE_SPEC_PREARM_SCREEN
 bool osdDrawSpec(displayPort_t *osdDisplayPort);
 #endif // USE_SPEC_PREARM_SCREEN

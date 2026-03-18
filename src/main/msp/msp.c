@@ -116,6 +116,7 @@
 #include "osd/osd.h"
 #include "osd/osd_elements.h"
 #include "osd/osd_warnings.h"
+#include "sensors/camera_lock.h"
 
 #include "pg/beeper.h"
 #include "pg/board.h"
@@ -155,7 +156,6 @@
 #endif
 
 #include "msp.h"
-
 
 static const char * const flightControllerIdentifier = FC_FIRMWARE_IDENTIFIER; // 4 UPPER CASE alpha numeric characters that identify the flight controller.
 
@@ -2223,30 +2223,41 @@ case MSP_NAME:
         break;
 #ifdef USE_FINAL
     case MSP_CAMERA_INFO:
-        // Placeholder values until camera-lock state is wired into the FC.
-        sbufWriteU16(dst, 0); // width_px
-        sbufWriteU16(dst, 0); // height_px
-        sbufWriteU32(dst, 0); // fx_px_x1000
-        sbufWriteU32(dst, 0); // fy_px_x1000
-        sbufWriteU32(dst, 0); // cx_px_x1000
-        sbufWriteU32(dst, 0); // cy_px_x1000
-        sbufWriteU8(dst, 0);  // hfov_deg
-        sbufWriteU8(dst, 0);  // vfov_deg
-        sbufWriteU8(dst, 0);  // tilt_angle_deg
-        sbufWriteU8(dst, 0);  // orientation
-        sbufWriteU16(dst, 0); // lock_rate_hz
-        sbufWriteU8(dst, 0);  // flags
+        {
+            const cameraLockInfo_t *info = cameraLockGetInfo();
+            sbufWriteU16(dst, info->width_px);
+            sbufWriteU16(dst, info->height_px);
+            sbufWriteU32(dst, info->fx_px_x1000);
+            sbufWriteU32(dst, info->fy_px_x1000);
+            sbufWriteU32(dst, info->cx_px_x1000);
+            sbufWriteU32(dst, info->cy_px_x1000);
+            sbufWriteU8(dst, info->hfov_deg);
+            sbufWriteU8(dst, info->vfov_deg);
+            sbufWriteU8(dst, (uint8_t)info->tilt_angle_deg);
+            sbufWriteU8(dst, info->orientation);
+            sbufWriteU16(dst, info->lock_rate_hz);
+            sbufWriteU8(dst, info->flags);
+        }
         break;
     case MSP_CAMERA_GET_LOCK:
-        sbufWriteU8(dst, 0);  // flags
-        sbufWriteU16(dst, 0); // x_px
-        sbufWriteU16(dst, 0); // y_px
+        {
+            cameraLockRawState_t state;
+            cameraLockGetRawState(&state);
+            sbufWriteU8(dst, state.flags);
+            sbufWriteU16(dst, state.x_px);
+            sbufWriteU16(dst, state.y_px);
+        }
         break;
     case MSP_CAMERA_LOCK:
-        sbufWriteU8(dst, 0);  // flags
-        sbufWriteU16(dst, 0); // x_px
-        sbufWriteU16(dst, 0); // y_px
-        sbufWriteU16(dst, 0); // age_ms
+        {
+            const timeUs_t currentTimeUs = micros();
+            cameraLockState_t state;
+            cameraLockGetState(&state, currentTimeUs, CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS);
+            sbufWriteU8(dst, state.flags);
+            sbufWriteU16(dst, state.x_px);
+            sbufWriteU16(dst, state.y_px);
+            sbufWriteU16(dst, state.age_ms);
+        }
         break;
 #endif
 #ifdef USE_RTC_TIME

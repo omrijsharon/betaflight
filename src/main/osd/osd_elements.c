@@ -158,6 +158,7 @@
 
 #include "osd/osd.h"
 #include "osd/osd_elements.h"
+#include "sensors/camera_lock.h"
 #include "osd/osd_warnings.h"
 
 #include "pg/motor.h"
@@ -245,6 +246,57 @@ static bool displayPendingForeground;
 static bool displayPendingBackground;
 static char elementBuff[OSD_ELEMENT_BUFFER_LENGTH];
 
+#ifdef USE_FINAL
+enum {
+    CAMERA_LOCK_TILE_TL = 0,
+    CAMERA_LOCK_TILE_TC,
+    CAMERA_LOCK_TILE_TR,
+    CAMERA_LOCK_TILE_BL,
+    CAMERA_LOCK_TILE_BC,
+    CAMERA_LOCK_TILE_BR,
+    CAMERA_LOCK_TILE_COUNT
+};
+
+static const uint8_t cameraLockPhaseGlyphs[3][2][CAMERA_LOCK_TILE_COUNT] = {
+    {
+        { SYM_XHAIR_PHASE_X0_Y0_TL, SYM_XHAIR_PHASE_X0_Y0_TC, SYM_XHAIR_PHASE_X0_Y0_TR,
+          SYM_XHAIR_PHASE_X0_Y0_BL, SYM_XHAIR_PHASE_X0_Y0_BC, SYM_XHAIR_PHASE_X0_Y0_BR },
+        { SYM_XHAIR_PHASE_X1_Y0_TL, SYM_XHAIR_PHASE_X1_Y0_TC, SYM_XHAIR_PHASE_X1_Y0_TR,
+          SYM_XHAIR_PHASE_X1_Y0_BL, SYM_XHAIR_PHASE_X1_Y0_BC, SYM_XHAIR_PHASE_X1_Y0_BR },
+    },
+    {
+        { SYM_XHAIR_PHASE_X0_Y1_TL, SYM_XHAIR_PHASE_X0_Y1_TC, SYM_XHAIR_PHASE_X0_Y1_TR,
+          SYM_XHAIR_PHASE_X0_Y1_BL, SYM_XHAIR_PHASE_X0_Y1_BC, SYM_XHAIR_PHASE_X0_Y1_BR },
+        { SYM_XHAIR_PHASE_X1_Y1_TL, SYM_XHAIR_PHASE_X1_Y1_TC, SYM_XHAIR_PHASE_X1_Y1_TR,
+          SYM_XHAIR_PHASE_X1_Y1_BL, SYM_XHAIR_PHASE_X1_Y1_BC, SYM_XHAIR_PHASE_X1_Y1_BR },
+    },
+    {
+        { SYM_XHAIR_PHASE_X0_Y2_TL, SYM_XHAIR_PHASE_X0_Y2_TC, SYM_XHAIR_PHASE_X0_Y2_TR,
+          SYM_XHAIR_PHASE_X0_Y2_BL, SYM_XHAIR_PHASE_X0_Y2_BC, SYM_XHAIR_PHASE_X0_Y2_BR },
+        { SYM_XHAIR_PHASE_X1_Y2_TL, SYM_XHAIR_PHASE_X1_Y2_TC, SYM_XHAIR_PHASE_X1_Y2_TR,
+          SYM_XHAIR_PHASE_X1_Y2_BL, SYM_XHAIR_PHASE_X1_Y2_BC, SYM_XHAIR_PHASE_X1_Y2_BR },
+    },
+};
+
+static int32_t floorDivInt(int32_t value, int32_t divisor)
+{
+    int32_t quotient = value / divisor;
+    int32_t remainder = value % divisor;
+
+    if (remainder < 0) {
+        quotient--;
+    }
+
+    return quotient;
+}
+
+static int32_t positiveModInt(int32_t value, int32_t divisor)
+{
+    int32_t mod = value % divisor;
+    return (mod < 0) ? (mod + divisor) : mod;
+}
+#endif
+
 // Return whether element is a SYS element and needs special handling
 #define IS_SYS_OSD_ELEMENT(item) (item >= OSD_SYS_GOGGLE_VOLTAGE) && (item <= OSD_SYS_FAN_SPEED)
 
@@ -268,6 +320,50 @@ static int osdDisplayWriteChar(osdElementParms_t *element, uint8_t x, uint8_t y,
 
     return osdDisplayWrite(element, x, y, attr, buf);
 }
+
+#ifdef USE_FINAL
+void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTimeUs)
+{
+    cameraLockState_t lockState;
+    const cameraLockInfo_t *lockInfo = cameraLockGetInfo();
+
+    cameraLockGetState(&lockState, currentTimeUs, CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS);
+
+    if ((lockState.flags & (CAMERA_LOCK_FLAG_DETECTED | CAMERA_LOCK_FLAG_HEALTHY | CAMERA_LOCK_FLAG_FRESH))
+        != (CAMERA_LOCK_FLAG_DETECTED | CAMERA_LOCK_FLAG_HEALTHY | CAMERA_LOCK_FLAG_FRESH)) {
+        return;
+    }
+
+    if (!(lockInfo->flags & CAMERA_LOCK_INFO_FLAG_VALID) || lockInfo->width_px <= 1 || lockInfo->height_px <= 1) {
+        return;
+    }
+
+    const int32_t virtualCols = osdDisplayPort->cols * 2;
+    const int32_t virtualRows = osdDisplayPort->rows * 3;
+    const int32_t targetVx = (int32_t)(((uint32_t)lockState.x_px * (virtualCols - 1) + ((lockInfo->width_px - 1) / 2U)) / (lockInfo->width_px - 1));
+    const int32_t targetVy = (int32_t)(((uint32_t)lockState.y_px * (virtualRows - 1) + ((lockInfo->height_px - 1) / 2U)) / (lockInfo->height_px - 1));
+    const int32_t spriteVx = targetVx - 3;
+    const int32_t spriteVy = targetVy - 3;
+    const int32_t phaseX = positiveModInt(spriteVx, 2);
+    const int32_t phaseY = positiveModInt(spriteVy, 3);
+    const int32_t baseCellX = floorDivInt(spriteVx, 2);
+    const int32_t baseCellY = floorDivInt(spriteVy, 3);
+    const uint8_t *glyphs = cameraLockPhaseGlyphs[phaseY][phaseX];
+
+    for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
+        const int tileCol = tileIndex % 3;
+        const int tileRow = tileIndex / 3;
+        const int drawX = baseCellX + tileCol;
+        const int drawY = baseCellY + tileRow;
+
+        if (drawX < 0 || drawX >= osdDisplayPort->cols || drawY < 0 || drawY >= osdDisplayPort->rows) {
+            continue;
+        }
+
+        displayWriteChar(osdDisplayPort, (uint8_t)drawX, (uint8_t)drawY, DISPLAYPORT_SEVERITY_NORMAL, glyphs[tileIndex]);
+    }
+}
+#endif
 
 #if defined(USE_ESC_SENSOR) || defined(USE_DSHOT_TELEMETRY)
 typedef int (*getEscRpmOrFreqFnPtr)(int i);

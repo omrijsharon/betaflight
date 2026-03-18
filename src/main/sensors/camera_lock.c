@@ -28,10 +28,10 @@
 
 static cameraLockInfo_t cameraLockInfo;
 static cameraLockRawState_t cameraLockRawState;
-static timeMs_t cameraLockLastUpdateTimeMs;
+static timeUs_t cameraLockLastUpdateTimeUs;
 static bool cameraLockHasEverUpdated;
 
-static uint16_t constrainToUint16(timeMs_t value)
+static uint16_t constrainToUint16(uint32_t value)
 {
     if (value > UINT16_MAX) {
         return UINT16_MAX;
@@ -53,7 +53,7 @@ void cameraLockReset(void)
 {
     memset(&cameraLockInfo, 0, sizeof(cameraLockInfo));
     memset(&cameraLockRawState, 0, sizeof(cameraLockRawState));
-    cameraLockLastUpdateTimeMs = 0;
+    cameraLockLastUpdateTimeUs = 0;
     cameraLockHasEverUpdated = false;
 }
 
@@ -92,21 +92,21 @@ float cameraLockGetCyPx(void)
     return decodeIntrinsicPx(cameraLockInfo.cy_px_x1000);
 }
 
-void cameraLockSetRawState(const cameraLockRawState_t *state, timeMs_t currentTimeMs)
+void cameraLockSetRawState(const cameraLockRawState_t *state, timeUs_t currentTimeUs)
 {
     if (!state) {
         return;
     }
 
     cameraLockRawState = *state;
-    cameraLockLastUpdateTimeMs = currentTimeMs;
+    cameraLockLastUpdateTimeUs = currentTimeUs;
     cameraLockHasEverUpdated = true;
 }
 
-void cameraLockClear(timeMs_t currentTimeMs)
+void cameraLockClear(timeUs_t currentTimeUs)
 {
     memset(&cameraLockRawState, 0, sizeof(cameraLockRawState));
-    cameraLockLastUpdateTimeMs = currentTimeMs;
+    cameraLockLastUpdateTimeUs = currentTimeUs;
     cameraLockHasEverUpdated = true;
 }
 
@@ -119,13 +119,13 @@ void cameraLockGetRawState(cameraLockRawState_t *state)
     *state = cameraLockRawState;
 }
 
-uint16_t cameraLockGetAgeMs(timeMs_t currentTimeMs)
+uint16_t cameraLockGetAgeMs(timeUs_t currentTimeUs)
 {
     if (!cameraLockHasEverUpdated) {
         return UINT16_MAX;
     }
 
-    return constrainToUint16((timeDelta_t)(currentTimeMs - cameraLockLastUpdateTimeMs));
+    return constrainToUint16((uint32_t)(cmpTimeUs(currentTimeUs, cameraLockLastUpdateTimeUs) / 1000));
 }
 
 bool cameraLockHasDetection(void)
@@ -138,16 +138,16 @@ bool cameraLockIsHealthy(void)
     return (cameraLockRawState.flags & CAMERA_LOCK_FLAG_HEALTHY) != 0;
 }
 
-bool cameraLockIsFresh(timeMs_t currentTimeMs, uint16_t freshnessThresholdMs)
+bool cameraLockIsFresh(timeUs_t currentTimeUs, uint16_t freshnessThresholdMs)
 {
     if (!cameraLockHasEverUpdated) {
         return false;
     }
 
-    return cameraLockGetAgeMs(currentTimeMs) <= freshnessThresholdMs;
+    return cameraLockGetAgeMs(currentTimeUs) <= freshnessThresholdMs;
 }
 
-void cameraLockGetState(cameraLockState_t *state, timeMs_t currentTimeMs, uint16_t freshnessThresholdMs)
+void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16_t freshnessThresholdMs)
 {
     if (!state) {
         return;
@@ -156,9 +156,9 @@ void cameraLockGetState(cameraLockState_t *state, timeMs_t currentTimeMs, uint16
     state->flags = cameraLockRawState.flags & (CAMERA_LOCK_FLAG_DETECTED | CAMERA_LOCK_FLAG_HEALTHY);
     state->x_px = cameraLockRawState.x_px;
     state->y_px = cameraLockRawState.y_px;
-    state->age_ms = cameraLockGetAgeMs(currentTimeMs);
+    state->age_ms = cameraLockGetAgeMs(currentTimeUs);
 
-    if (cameraLockIsFresh(currentTimeMs, freshnessThresholdMs)) {
+    if (cameraLockIsFresh(currentTimeUs, freshnessThresholdMs)) {
         state->flags |= CAMERA_LOCK_FLAG_FRESH;
     }
 }
