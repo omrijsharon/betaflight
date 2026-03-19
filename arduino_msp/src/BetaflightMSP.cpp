@@ -26,20 +26,22 @@ void BetaflightMSP::resetRxState() {
     _rxCommand = 0;
     _rxChecksum = 0;
     _rxChecksum2 = 0;
+    _rxDirection = 0;
     _rxError = false;
+    _messageReceived = false;
     _responseReceived = false;
 }
 
-void BetaflightMSP::sendMSP(uint16_t cmd, uint8_t *payload, uint8_t payloadSize, bool expectResponse) {
+void BetaflightMSP::sendMSP(uint16_t cmd, uint8_t *payload, uint8_t payloadSize, char direction, bool expectResponse) {
     if (!_port) return;
     
-    // MSP V1 frame format: $M<[size][cmd][payload][checksum]
+    // MSP V1 frame format: $M[direction][size][cmd][payload][checksum]
     uint8_t checksum = 0;
     
     // Header
     _port->write('$');
     _port->write('M');
-    _port->write('<');
+    _port->write(direction);
     
     // Size
     _port->write(payloadSize);
@@ -60,6 +62,7 @@ void BetaflightMSP::sendMSP(uint16_t cmd, uint8_t *payload, uint8_t payloadSize,
     
     if (expectResponse) {
         _responseReceived = false;
+        _messageReceived = false;
         _requestTimeout = millis() + 500;  // 500ms timeout
     }
 }
@@ -68,12 +71,12 @@ bool BetaflightMSP::request(uint16_t cmd, uint8_t *payload, uint8_t payloadSize,
     if (!_port) return false;
     
     resetRxState();
-    sendMSP(cmd, payload, payloadSize, true);
+    sendMSP(cmd, payload, payloadSize, MSP_DIRECTION_REQUEST, true);
     
     uint32_t startTime = millis();
     while (millis() - startTime < timeout) {
         update();
-        if (_responseReceived && _rxCommand == cmd) {
+        if (_responseReceived && _rxCommand == cmd && _rxDirection != MSP_DIRECTION_REQUEST) {
             return !_rxError;
         }
     }
@@ -84,7 +87,14 @@ bool BetaflightMSP::request(uint16_t cmd, uint8_t *payload, uint8_t payloadSize,
 bool BetaflightMSP::command(uint16_t cmd, uint8_t *payload, uint8_t payloadSize) {
     if (!_port) return false;
     
-    sendMSP(cmd, payload, payloadSize, false);
+    sendMSP(cmd, payload, payloadSize, MSP_DIRECTION_REQUEST, false);
+    return true;
+}
+
+bool BetaflightMSP::reply(uint16_t cmd, uint8_t *payload, uint8_t payloadSize) {
+    if (!_port) return false;
+
+    sendMSP(cmd, payload, payloadSize, MSP_DIRECTION_RESPONSE, false);
     return true;
 }
 
@@ -94,10 +104,16 @@ void BetaflightMSP::update() {
     while (_port->available()) {
         uint8_t c = _port->read();
         if (processReceivedByte(c)) {
+            _messageReceived = true;
             _responseReceived = true;
             return;
         }
     }
+}
+
+void BetaflightMSP::clearMessage() {
+    _messageReceived = false;
+    _responseReceived = false;
 }
 
 bool BetaflightMSP::processReceivedByte(uint8_t c) {
@@ -117,12 +133,19 @@ bool BetaflightMSP::processReceivedByte(uint8_t c) {
             break;
             
         case MSP_HEADER_M:
-            if (c == '>') {
+            if (c == '<') {
                 _rxState = MSP_HEADER_ARROW;
+                _rxDirection = MSP_DIRECTION_REQUEST;
+                _rxError = false;
+                _rxChecksum = 0;
+            } else if (c == '>') {
+                _rxState = MSP_HEADER_ARROW;
+                _rxDirection = MSP_DIRECTION_RESPONSE;
                 _rxError = false;
                 _rxChecksum = 0;
             } else if (c == '!') {
                 _rxState = MSP_HEADER_ARROW;
+                _rxDirection = MSP_DIRECTION_ERROR;
                 _rxError = true;
                 _rxChecksum = 0;
             } else {
@@ -371,6 +394,55 @@ bool BetaflightMSP::getRC(msp_rc_t &data) {
     return true;
 }
 
+bool BetaflightMSP::getCameraInfo(msp_camera_info_t &data) {
+    if (!request(MSP_CAMERA_INFO, nullptr, 0)) {
+        return false;
+    }
+
+    uint8_t offset = 0;
+    data.width_px = readU16(_rxPayload, offset);
+    data.height_px = readU16(_rxPayload, offset);
+    data.fx_px_x1000 = readU32(_rxPayload, offset);
+    data.fy_px_x1000 = readU32(_rxPayload, offset);
+    data.cx_px_x1000 = readU32(_rxPayload, offset);
+    data.cy_px_x1000 = readU32(_rxPayload, offset);
+    data.hfov_deg = _rxPayload[offset++];
+    data.vfov_deg = _rxPayload[offset++];
+    data.tilt_angle_deg = (int8_t)_rxPayload[offset++];
+    data.orientation = _rxPayload[offset++];
+    data.lock_rate_hz = readU16(_rxPayload, offset);
+    data.flags = _rxPayload[offset++];
+
+    return true;
+}
+
+bool BetaflightMSP::getCameraRawLock(msp_camera_raw_lock_t &data) {
+    if (!request(MSP_CAMERA_GET_LOCK, nullptr, 0)) {
+        return false;
+    }
+
+    uint8_t offset = 0;
+    data.flags = _rxPayload[offset++];
+    data.x_px = readU16(_rxPayload, offset);
+    data.y_px = readU16(_rxPayload, offset);
+
+    return true;
+}
+
+bool BetaflightMSP::getCameraLock(msp_camera_lock_t &data) {
+    if (!request(MSP_CAMERA_LOCK, nullptr, 0)) {
+        return false;
+    }
+
+    uint8_t offset = 0;
+    data.flags = _rxPayload[offset++];
+    data.x_px = readU16(_rxPayload, offset);
+    data.y_px = readU16(_rxPayload, offset);
+    data.age_ms = readU16(_rxPayload, offset);
+
+    return true;
+}
+
 bool BetaflightMSP::setRawRC(uint16_t *channels, uint8_t channelCount) {
     if (channelCount > 18) channelCount = 18;
     
@@ -405,6 +477,37 @@ bool BetaflightMSP::setRawGPS(uint8_t fixType, uint8_t numSat, int32_t lat, int3
     write32(payload, offset, lon);
     writeU16(payload, offset, altM * 100);  // Convert meters to cm
     writeU16(payload, offset, groundSpeed);
-    
+
     return command(MSP_SET_RAW_GPS, payload, offset);
+}
+
+bool BetaflightMSP::setCameraInfo(const msp_camera_info_t &data) {
+    uint8_t payload[27];
+    uint8_t offset = 0;
+
+    writeU16(payload, offset, data.width_px);
+    writeU16(payload, offset, data.height_px);
+    writeU32(payload, offset, data.fx_px_x1000);
+    writeU32(payload, offset, data.fy_px_x1000);
+    writeU32(payload, offset, data.cx_px_x1000);
+    writeU32(payload, offset, data.cy_px_x1000);
+    payload[offset++] = data.hfov_deg;
+    payload[offset++] = data.vfov_deg;
+    payload[offset++] = (uint8_t)data.tilt_angle_deg;
+    payload[offset++] = data.orientation;
+    writeU16(payload, offset, data.lock_rate_hz);
+    payload[offset++] = data.flags;
+
+    return request(MSP_SET_CAMERA_INFO, payload, offset);
+}
+
+bool BetaflightMSP::replyCameraRawLock(const msp_camera_raw_lock_t &data) {
+    uint8_t payload[5];
+    uint8_t offset = 0;
+
+    payload[offset++] = data.flags;
+    writeU16(payload, offset, data.x_px);
+    writeU16(payload, offset, data.y_px);
+
+    return reply(MSP_CAMERA_GET_LOCK, payload, offset);
 }

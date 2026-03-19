@@ -121,6 +121,7 @@
 #include "sensors/barometer.h"
 #include "sensors/battery.h"
 #include "sensors/boardalignment.h"
+#include "sensors/camera_lock.h"
 #include "sensors/compass.h"
 #include "sensors/esc_sensor.h"
 #include "sensors/gyro.h"
@@ -1805,6 +1806,10 @@ const clivalue_t valueTable[] = {
     { "alt_hold_thrust_zero_pwm", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 1400 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_thrust_zero_pwm) },
     { "alt_hold_hover_pwm",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1000, 2000 }, PG_POSITION, offsetof(positionConfig_t, alt_hold_hover_pwm) },
     { "alt_hold_i_limit_cms",    VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 2000 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_i_limit_cms) },
+#endif
+
+#ifdef USE_FINAL
+    { "camera_lock_port",        VAR_INT8   | MASTER_VALUE, .config.minmax = { SERIAL_PORT_NONE, SERIAL_PORT_IDENTIFIER_MAX }, PG_CAMERA_LOCK_CONFIG, offsetof(cameraLockConfig_t, portOverride) },
 #endif
 
 // PG_MODE_ACTIVATION_CONFIG

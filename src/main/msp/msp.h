@@ -59,11 +59,11 @@ typedef int mspDescriptor_t;
 struct serialPort_s;
 typedef void (*mspPostProcessFnPtr)(struct serialPort_s *port); // msp post process function, used for gracefully handling reboots, etc.
 typedef mspResult_e (*mspProcessCommandFnPtr)(mspDescriptor_t srcDesc, mspPacket_t *cmd, mspPacket_t *reply, mspPostProcessFnPtr *mspPostProcessFn);
-typedef void (*mspProcessReplyFnPtr)(mspPacket_t *cmd);
+typedef void (*mspProcessReplyFnPtr)(mspDescriptor_t srcDesc, mspPacket_t *cmd);
 
 
 void mspInit(void);
 mspResult_e mspFcProcessCommand(mspDescriptor_t srcDesc, mspPacket_t *cmd, mspPacket_t *reply, mspPostProcessFnPtr *mspPostProcessFn);
-void mspFcProcessReply(mspPacket_t *reply);
+void mspFcProcessReply(mspDescriptor_t srcDesc, mspPacket_t *reply);
 
 mspDescriptor_t mspDescriptorAlloc(void);

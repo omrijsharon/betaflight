@@ -24,6 +24,9 @@
 #include <stdint.h>
 
 #include "common/time.h"
+#include "io/serial.h"
+#include "msp/msp.h"
+#include "pg/pg.h"
 
 #ifdef USE_FINAL
 
@@ -74,10 +77,17 @@ typedef struct cameraLockState_s {
     uint16_t age_ms;
 } cameraLockState_t;
 
+typedef struct cameraLockConfig_s {
+    int8_t portOverride;
+} cameraLockConfig_t;
+
+PG_DECLARE(cameraLockConfig_t, cameraLockConfig);
+
 void cameraLockInit(void);
 void cameraLockReset(void);
 
 void cameraLockSetInfo(const cameraLockInfo_t *info);
+bool cameraLockBindFromSource(const cameraLockInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs);
 const cameraLockInfo_t *cameraLockGetInfo(void);
 float cameraLockGetFxPx(void);
 float cameraLockGetFyPx(void);
@@ -86,6 +96,8 @@ float cameraLockGetCyPx(void);
 
 void cameraLockSetRawState(const cameraLockRawState_t *state, timeUs_t currentTimeUs);
 void cameraLockClear(timeUs_t currentTimeUs);
+void cameraLockService(timeUs_t currentTimeUs);
+void cameraLockHandleReply(mspDescriptor_t srcDesc, const cameraLockRawState_t *state, timeUs_t currentTimeUs);
 
 void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16_t freshnessThresholdMs);
 void cameraLockGetRawState(cameraLockRawState_t *state);

@@ -2,53 +2,164 @@
 
 ## Purpose
 
-This file explains the three custom MSP messages used for camera-lock data in this Betaflight fork:
+This file explains the implemented camera-lock MSP flow in this Betaflight fork.
+
+The camera is treated as a private MSP peripheral:
+
+- it boots on its own
+- when ready, it sends camera info to the FC
+- the FC binds the camera to that MSP source/port
+- the FC then polls that same port for lock data at the configured rate
+- the FC caches the result and uses it for OSD lock rendering
+
+These commands are private fork extensions and are intended to be compiled under `USE_FINAL`.
+
+## Command List
 
 - `MSP_CAMERA_INFO` = `190`
 - `MSP_CAMERA_GET_LOCK` = `191`
 - `MSP_CAMERA_LOCK` = `192`
-
-The goal is to let another agent understand:
-
-- what each message means
-- what the payload layout is
-- what the fields represent
-- how firmware code and external tools should use them
-
-These commands are private fork extensions and are intended to be compiled under `USE_FINAL`.
+- `MSP_SET_CAMERA_INFO` = `193`
 
 ## General Notes
 
-- MSP version: these commands are used as custom MSP v1 IDs
+- MSP version: custom MSP v1 IDs
 - payload byte order: little-endian
-- lock coordinates are image pixel coordinates
-- image origin is top-left
-- all camera-lock state in the FC is owned by `src/main/sensors/camera_lock.c`
+- image origin: top-left
+- lock coordinates are image pixel coordinates in the active camera image
+- the FC-side source of truth is:
+  - [camera_lock.h](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/sensors/camera_lock.h)
+  - [camera_lock.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/sensors/camera_lock.c)
 
-There are two layers of lock data:
+There are three relevant layers of state:
 
-1. **raw lock state**
-   - latest lock information received from the upstream camera/vision source
-2. **FC-derived lock state**
-   - same lock position plus FC-side `age_ms` and `fresh` calculation
+1. camera info
+   - static or slow-changing metadata
+2. raw lock state
+   - latest lock sample received from the camera
+3. FC-derived lock state
+   - raw lock plus FC-computed `age_ms` and `fresh`
 
-That is why there are separate `GET_LOCK` and `LOCK` messages.
+## Implemented Flow
 
-## Message 190: `MSP_CAMERA_INFO`
+### 1. Camera boot and registration
+
+When the camera is up and ready, it sends:
+
+- `MSP_SET_CAMERA_INFO`
+
+The FC:
+
+- parses the payload
+- stores the camera info
+- identifies which MSP source/port sent it
+- binds the camera to that source
+- computes the polling period from `lock_rate_hz`
+- starts polling that same port immediately
+
+Normal MSP success handling acts as the acknowledgment.
+There is no separate custom ack message.
+
+### 2. FC polling
+
+After a successful bind, the FC sends:
+
+- `MSP_CAMERA_GET_LOCK`
+
+with an empty payload to the bound camera port only.
+
+The poll period is:
+
+- `poll_period_us = 1000000 / lock_rate_hz`
+
+The FC sends a new poll only when:
+
+- camera info is valid
+- a camera source is bound
+- `lock_rate_hz > 0`
+- one full poll period elapsed since the last sent poll
+- there is no outstanding unanswered poll
+
+### 3. Camera reply
+
+The camera replies to `MSP_CAMERA_GET_LOCK` with:
+
+- `flags`
+- `x_px`
+- `y_px`
+
+The FC accepts the reply only if it came from the currently bound source.
+
+The FC then:
+
+- updates raw lock state
+- updates `lastReplyReceivedUs`
+- clears the outstanding-poll flag
+
+### 4. FC-derived state and OSD
+
+The FC computes:
+
+- `age_ms`
+- `fresh`
+- `healthy`
+
+from its own clock and timeout rules.
+
+The private lock OSD overlay uses the FC-derived state and renders only when:
+
+- `DETECTED`
+- `HEALTHY`
+- `FRESH`
+
+are all set.
+
+## Timeout Policy
+
+The implemented timeout behavior is two-stage:
+
+- short timeout = `2 x poll period`
+- long timeout = `10 x poll period`
+
+### Short timeout
+
+If no valid reply has been received within `2 x poll period`:
+
+- cached lock is degraded
+- `HEALTHY` is cleared
+- `FRESH` becomes false
+- the lock overlay disappears automatically
+- binding is kept
+- polling continues
+
+### Long timeout
+
+If no valid reply has been received within `10 x poll period`:
+
+- binding is dropped
+- polling stops
+- raw lock state is cleared
+- the FC waits for a new `MSP_SET_CAMERA_INFO`
+
+### Rebinding
+
+If a new valid `MSP_SET_CAMERA_INFO` arrives from a different source:
+
+- the new source replaces the old one immediately
+- polling switches to the new source and its `lock_rate_hz`
+
+## Message 193: `MSP_SET_CAMERA_INFO`
 
 ### Meaning
 
-Returns the active camera model/configuration information needed to interpret lock coordinates.
+Camera-to-FC registration/configuration message.
 
-This is static or slow-changing metadata:
+This is the message the camera sends once it has finished booting and is ready to be polled.
 
-- active image size
-- camera intrinsics
-- FOV
-- camera tilt
-- camera orientation
-- nominal lock/detection rate
-- info flags
+### Direction
+
+- sender: camera
+- receiver: FC
 
 ### Payload
 
@@ -67,6 +178,24 @@ uint16 lock_rate_hz;
 uint8  flags;
 ```
 
+Python packing format for this exact payload:
+
+```python
+'<HHIIIIBBbBHB'
+```
+
+Meaning:
+
+- `H H` = `width_px`, `height_px`
+- `I I I I` = `fx_px_x1000`, `fy_px_x1000`, `cx_px_x1000`, `cy_px_x1000`
+- `B B` = `hfov_deg`, `vfov_deg`
+- `b` = `tilt_angle_deg`
+- `B` = `orientation`
+- `H` = `lock_rate_hz`
+- `B` = `flags`
+
+This is the correct order currently used by the Betaflight fork and the Python fake-camera side.
+
 ### Field meanings
 
 - `width_px`
@@ -74,65 +203,98 @@ uint8  flags;
 - `height_px`
   - active image height in pixels
 - `fx_px_x1000`
-  - focal length in x, in pixels times `1000`
+  - focal length in x, pixels times `1000`
 - `fy_px_x1000`
-  - focal length in y, in pixels times `1000`
+  - focal length in y, pixels times `1000`
 - `cx_px_x1000`
-  - principal point x, in pixels times `1000`
+  - principal point x, pixels times `1000`
 - `cy_px_x1000`
-  - principal point y, in pixels times `1000`
+  - principal point y, pixels times `1000`
 - `hfov_deg`
   - horizontal field of view, integer degrees
 - `vfov_deg`
   - vertical field of view, integer degrees
 - `tilt_angle_deg`
-  - camera tilt around the pitch axis, signed degrees, valid range `-90 .. +90`
+  - signed camera tilt angle, `-90 .. +90`
 - `orientation`
-  - rotation around the camera front axis:
+  - image rotation around the front axis:
     - `0` = `0 deg`
     - `1` = `+90 deg`
     - `2` = `180 deg`
     - `3` = `-90 deg`
 - `lock_rate_hz`
-  - nominal upstream lock/detection rate
+  - requested FC polling rate
 - `flags`
   - info validity/health bits
 
-### Info flags
+### Result
 
-Defined in `camera_lock.h`:
+On success, the FC:
 
-- bit0 = `CAMERA_LOCK_INFO_FLAG_VALID`
-- bit1 = `CAMERA_LOCK_INFO_FLAG_CROPPED`
-- bit2 = `CAMERA_LOCK_INFO_FLAG_INTRINSICS_VALID`
-- bit3 = `CAMERA_LOCK_INFO_FLAG_FOV_VALID`
-- bit4 = `CAMERA_LOCK_INFO_FLAG_HEALTHY`
+- stores the info
+- binds the camera to the source port
+- starts lock polling
+
+## Message 190: `MSP_CAMERA_INFO`
+
+### Meaning
+
+Reads back the currently cached camera info from the FC.
+
+This is the FC-exported form of the info that was previously provided through `MSP_SET_CAMERA_INFO`.
+
+### Direction
+
+- sender: FC
+- receiver: external tool/client
+
+### Payload
+
+```c
+uint16 width_px;
+uint16 height_px;
+uint32 fx_px_x1000;
+uint32 fy_px_x1000;
+uint32 cx_px_x1000;
+uint32 cy_px_x1000;
+uint8  hfov_deg;
+uint8  vfov_deg;
+int8   tilt_angle_deg;
+uint8  orientation;
+uint16 lock_rate_hz;
+uint8  flags;
+```
 
 ### How another agent should use it
 
-Use this message when code needs to:
-
-- map image coordinates to OSD coordinates
-- understand the active image size
-- decode intrinsics
-- know whether the camera info is valid and healthy
+Use this when you need to inspect the FC's current camera configuration state.
 
 For intrinsics:
 
-- divide `*_x1000` values by `1000.0`
-- the FC already exposes helper decode functions in `camera_lock.c`
+- divide `*_x1000` by `1000.0`
 
 ## Message 191: `MSP_CAMERA_GET_LOCK`
 
 ### Meaning
 
-Returns the latest **raw** lock state stored in the FC.
+This command has two roles:
 
-This is the closest representation of what the upstream camera/vision source most recently provided.
+1. **FC -> camera**
+   - empty poll request
+2. **FC -> external tool**
+   - read back the latest raw lock state cached in the FC
 
-It does **not** include FC-derived age or freshness.
+### Poll request
 
-### Payload
+Request payload:
+
+```c
+// empty
+```
+
+The FC sends this request to the bound camera port only.
+
+### Camera reply payload
 
 ```c
 uint8  flags;
@@ -140,14 +302,20 @@ uint16 x_px;
 uint16 y_px;
 ```
 
+Python packing format:
+
+```python
+'<BHH'
+```
+
 ### Field meanings
 
 - `flags`
   - raw lock flags
 - `x_px`
-  - raw lock x coordinate in active image pixels
+  - lock x coordinate in active image pixels
 - `y_px`
-  - raw lock y coordinate in active image pixels
+  - lock y coordinate in active image pixels
 
 ### Raw lock flags
 
@@ -156,34 +324,24 @@ Defined in `camera_lock.h`:
 - bit0 = `CAMERA_LOCK_FLAG_DETECTED`
 - bit1 = `CAMERA_LOCK_FLAG_HEALTHY`
 
-Note:
+### External readback use
 
-- `FRESH` is **not** part of the raw state
-- freshness is computed by the FC from local time
-
-### How another agent should use it
-
-Use this message when you want:
-
-- the last raw lock position
-- the raw upstream lock bits
-- a direct view of the cached source data without FC freshness logic
+When an external client requests `MSP_CAMERA_GET_LOCK` from the FC, the FC returns the latest raw cached lock state.
 
 This is useful for:
 
-- debugging the upstream lock producer
-- checking whether the FC is caching incoming lock coordinates correctly
+- debugging camera replies
+- checking that FC caching works
+
+It does not include FC-derived freshness or age.
 
 ## Message 192: `MSP_CAMERA_LOCK`
 
 ### Meaning
 
-Returns the FC-derived lock state.
+Reads back the FC-derived lock state.
 
-This is the message that other FC features should normally trust for rendering or behavior decisions, because it includes:
-
-- `age_ms`
-- `fresh`
+This is the message other FC consumers should trust for behavior decisions because it includes FC-side aging/freshness.
 
 ### Payload
 
@@ -199,11 +357,11 @@ uint16 age_ms;
 - `flags`
   - FC-derived lock flags
 - `x_px`
-  - lock x coordinate in active image pixels
+  - cached lock x coordinate
 - `y_px`
-  - lock y coordinate in active image pixels
+  - cached lock y coordinate
 - `age_ms`
-  - age of the cached lock sample, computed by the FC from its own clock
+  - age of the cached sample, computed from the FC clock
 
 ### FC-derived lock flags
 
@@ -213,71 +371,78 @@ Defined in `camera_lock.h`:
 - bit1 = `CAMERA_LOCK_FLAG_HEALTHY`
 - bit2 = `CAMERA_LOCK_FLAG_FRESH`
 
-### Freshness behavior
-
-The FC computes freshness using:
-
-- last camera-lock update time
-- current FC time in microseconds
-- `CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS`
-
-Current default:
-
-- `100 ms`
-
 ### How another agent should use it
 
-Use this message for:
+Use this for:
 
-- OSD lock rendering
-- behavior that must ignore stale data
-- anything that should depend on current valid lock state
+- lock-driven OSD behavior
+- lock validity decisions
+- checking whether the FC considers the lock usable
 
-This is the preferred message for consumers that want:
+This is the preferred message when you care about:
 
 - `detected`
 - `healthy`
 - `fresh`
-- current lock position
+- `age_ms`
 
-## Expected usage pattern
+## OSD Mapping Flow
 
-### FC internal usage
+The private camera-lock overlay in:
 
-- `camera_lock.c` stores camera info and raw lock state
-- `msp.c` exposes that state over MSP
-- OSD lock overlay uses the FC-derived state from `camera_lock.c`, not raw placeholders
+- [osd_elements.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/osd/osd_elements.c)
 
-### External client usage
+does this:
 
-Recommended order:
+1. read FC-derived state from `camera_lock.c`
+2. require `detected && healthy && fresh`
+3. use:
+   - `x_px`
+   - `y_px`
+   - `width_px`
+   - `height_px`
+4. map the image-space lock point into the phased OSD grid
+5. quantize to the virtual OSD coordinates
+6. draw the `3x2` lock sprite using phase-selected glyphs
 
-1. request `MSP_CAMERA_INFO`
-2. request `MSP_CAMERA_LOCK`
-3. only use the lock for display/control if:
-   - `DETECTED` is set
-   - `HEALTHY` is set
-   - `FRESH` is set
+Important:
 
-Use `MSP_CAMERA_GET_LOCK` only if you specifically want raw cached values.
+- current OSD mapping uses `width_px` and `height_px`
+- it does **not** currently use:
+  - `fx/fy/cx/cy`
+  - `hfov/vfov`
+  - `tilt_angle_deg`
+  - `orientation`
 
-## Wire sizes
+So the current implementation is:
+
+- image-space normalization to phased OSD space
+
+not full camera-geometry projection.
+
+## Wire Sizes
+
+### `MSP_SET_CAMERA_INFO`
+
+Payload size:
+
+- `27 bytes`
 
 ### `MSP_CAMERA_INFO`
 
 Payload size:
 
-- `2 + 2 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1 + 2 + 1 = 27 bytes`
+- `27 bytes`
 
 MSP v1 response frame size:
 
-- `27 + 6 = 33 bytes`
+- `33 bytes`
 
 ### `MSP_CAMERA_GET_LOCK`
 
 Payload size:
 
-- `1 + 2 + 2 = 5 bytes`
+- `5 bytes`
 
 MSP v1 response frame size:
 
@@ -287,31 +452,55 @@ MSP v1 response frame size:
 
 Payload size:
 
-- `1 + 2 + 2 + 2 = 7 bytes`
+- `7 bytes`
 
 MSP v1 response frame size:
 
 - `13 bytes`
 
-## Important implementation notes
+## Recommended Usage For Another Agent
 
-- `MSP_CAMERA_INFO` is meaningful only if `CAMERA_LOCK_INFO_FLAG_VALID` is set
-- if `width_px <= 1` or `height_px <= 1`, lock-to-OSD mapping should be treated as invalid
+If you are implementing the camera side:
+
+1. boot the camera
+2. when ready, send `MSP_SET_CAMERA_INFO`
+3. wait for normal MSP success/ack behavior
+4. then wait for empty `MSP_CAMERA_GET_LOCK` requests from the FC
+5. reply with:
+   - `flags`
+   - `x_px`
+   - `y_px`
+
+If you are implementing a debug tool on the FC side:
+
+1. request `MSP_CAMERA_INFO`
+2. request `MSP_CAMERA_GET_LOCK` if you want raw cached lock
+3. request `MSP_CAMERA_LOCK` if you want FC-derived validity
+
+If you are implementing an FC consumer:
+
+- prefer `MSP_CAMERA_LOCK` semantics, not raw lock semantics
+
+## Important Implementation Notes
+
+- `lock_rate_hz == 0` means polling should not start
+- `width_px <= 1` or `height_px <= 1` makes OSD mapping invalid
 - `tilt_angle_deg` is signed
-- `orientation` and `tilt_angle_deg` are different concepts:
+- `orientation` and `tilt_angle_deg` are different:
   - `orientation` = image rotation
-  - `tilt_angle_deg` = camera pitch/tilt angle
-- intrinsics are fixed-point `x1000`, not integers in plain pixels
+  - `tilt_angle_deg` = camera pitch/tilt
+- intrinsics are fixed-point `x1000`
+- one camera source is supported at a time
 
-## Current FC ownership
+## Code Ownership
 
-The current source of truth is:
+Current code ownership is:
 
-- [camera_lock.h](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/sensors/camera_lock.h)
-- [camera_lock.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/sensors/camera_lock.c)
-
-The MSP serialization lives in:
-
-- [msp.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/msp/msp.c)
-
-Another agent extending this feature should update the `camera_lock` module first, then let MSP and OSD read from it.
+- camera state, binding, polling, timeouts:
+  - [camera_lock.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/sensors/camera_lock.c)
+- MSP command parsing and serialization:
+  - [msp.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/msp/msp.c)
+- MSP serial source/port plumbing:
+  - [msp_serial.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/msp/msp_serial.c)
+- private lock overlay rendering:
+  - [osd_elements.c](/c:/Users/tamipinhasi/Documents/repos/betaflight/src/main/osd/osd_elements.c)

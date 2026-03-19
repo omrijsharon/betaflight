@@ -91,6 +91,7 @@
 #include "sensors/barometer.h"
 #include "sensors/battery.h"
 #include "sensors/compass.h"
+#include "sensors/camera_lock.h"
 #include "sensors/esc_sensor.h"
 #include "sensors/gyro.h"
 #include "sensors/sensors.h"
@@ -130,7 +131,9 @@ static void taskMain(timeUs_t currentTimeUs)
 
 static void taskHandleSerial(timeUs_t currentTimeUs)
 {
+#ifndef USE_FINAL
     UNUSED(currentTimeUs);
+#endif
 
 #if defined(USE_VCP)
     DEBUG_SET(DEBUG_USB, 0, usbCableIsInserted());
@@ -146,6 +149,9 @@ static void taskHandleSerial(timeUs_t currentTimeUs)
 #endif
     bool evaluateMspData = ARMING_FLAG(ARMED) ? MSP_SKIP_NON_MSP_DATA : MSP_EVALUATE_NON_MSP_DATA;
     mspSerialProcess(evaluateMspData, mspFcProcessCommand, mspFcProcessReply);
+#ifdef USE_FINAL
+    cameraLockService(currentTimeUs);
+#endif
 }
 
 static void taskBatteryAlerts(timeUs_t currentTimeUs)

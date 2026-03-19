@@ -148,6 +148,12 @@
 #define MSP_SET_OSD_CANVAS              188  // in message - Set osd canvas size
 #define MSP_OSD_CANVAS                  189  // out message - Get osd canvas size
 
+// FINAL private camera-lock commands
+#define MSP_CAMERA_INFO                 190  // out message - Get active camera geometry / camera-lock info
+#define MSP_CAMERA_GET_LOCK             191  // out message - Get current raw camera lock
+#define MSP_CAMERA_LOCK                 192  // out message - Get FC-derived camera lock state
+#define MSP_SET_CAMERA_INFO             193  // in message - Set active camera geometry / camera-lock info
+
 // Multiwii original MSP commands
 #define MSP_STATUS                      101  // out message - cycletime & errors_count & sensor present & box activation
 #define MSP_RAW_IMU                     102  // out message - 9 DOF
@@ -332,6 +338,34 @@ struct msp_rc_t {
     uint16_t channels[18];      // RC channel values (1000-2000)
 };
 
+struct msp_camera_info_t {
+    uint16_t width_px;
+    uint16_t height_px;
+    uint32_t fx_px_x1000;
+    uint32_t fy_px_x1000;
+    uint32_t cx_px_x1000;
+    uint32_t cy_px_x1000;
+    uint8_t hfov_deg;
+    uint8_t vfov_deg;
+    int8_t tilt_angle_deg;
+    uint8_t orientation;
+    uint16_t lock_rate_hz;
+    uint8_t flags;
+};
+
+struct msp_camera_raw_lock_t {
+    uint8_t flags;
+    uint16_t x_px;
+    uint16_t y_px;
+};
+
+struct msp_camera_lock_t {
+    uint8_t flags;
+    uint16_t x_px;
+    uint16_t y_px;
+    uint16_t age_ms;
+};
+
 class BetaflightMSP {
 public:
     BetaflightMSP();
@@ -345,6 +379,9 @@ public:
     // Send MSP command (no response expected)
     bool command(uint16_t cmd, uint8_t *payload, uint8_t payloadSize);
     
+    // Send MSP reply (peripheral/device mode)
+    bool reply(uint16_t cmd, uint8_t *payload, uint8_t payloadSize);
+    
     // Process incoming MSP data (call in loop)
     void update();
     
@@ -352,7 +389,12 @@ public:
     uint8_t* getPayload() { return _rxPayload; }
     uint8_t getPayloadSize() { return _rxPayloadSize; }
     uint16_t getCommand() { return _rxCommand; }
+    char getDirection() { return _rxDirection; }
     bool isError() { return _rxError; }
+    bool hasMessage() { return _messageReceived; }
+    bool isRequest() { return _messageReceived && _rxDirection == MSP_DIRECTION_REQUEST; }
+    bool isResponse() { return _messageReceived && _rxDirection == MSP_DIRECTION_RESPONSE; }
+    void clearMessage();
     
     // Convenience functions for common requests
     bool getApiVersion(msp_api_version_t &data);
@@ -368,17 +410,22 @@ public:
     bool getCompGPS(msp_comp_gps_t &data);
     bool getBatteryState(msp_battery_state_t &data);
     bool getRC(msp_rc_t &data);
+    bool getCameraInfo(msp_camera_info_t &data);
+    bool getCameraRawLock(msp_camera_raw_lock_t &data);
+    bool getCameraLock(msp_camera_lock_t &data);
     
     // Convenience functions for common commands
     bool setRawRC(uint16_t *channels, uint8_t channelCount);
     bool setGPSHome(int32_t lat, int32_t lon, uint16_t altitudeM);
     bool setRawGPS(uint8_t fixType, uint8_t numSat, int32_t lat, int32_t lon, int16_t altM, uint16_t groundSpeed);
+    bool setCameraInfo(const msp_camera_info_t &data);
+    bool replyCameraRawLock(const msp_camera_raw_lock_t &data);
     
 private:
     Stream *_port;
     
     // TX state
-    void sendMSP(uint16_t cmd, uint8_t *payload, uint8_t payloadSize, bool expectResponse);
+    void sendMSP(uint16_t cmd, uint8_t *payload, uint8_t payloadSize, char direction, bool expectResponse);
     
     // RX state
     enum msp_state_t {
@@ -400,7 +447,9 @@ private:
     uint16_t _rxCommand;
     uint8_t _rxChecksum;
     uint8_t _rxChecksum2;
+    char _rxDirection;
     bool _rxError;
+    bool _messageReceived;
     bool _responseReceived;
     uint32_t _requestTimeout;
     

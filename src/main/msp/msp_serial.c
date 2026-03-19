@@ -100,11 +100,35 @@ mspDescriptor_t getMspSerialPortDescriptor(const uint8_t portIdentifier)
 {
     for (uint8_t portIndex = 0; portIndex < MAX_MSP_PORT_COUNT; portIndex++) {
         mspPort_t *candidateMspPort = &mspPorts[portIndex];
-        if (candidateMspPort->port->identifier == portIdentifier) {
+        if (candidateMspPort->port && candidateMspPort->port->identifier == portIdentifier) {
             return candidateMspPort->descriptor;
         }
     }
     return -1;
+}
+
+serialPortIdentifier_e getMspSerialPortIdentifierByDescriptor(mspDescriptor_t descriptor)
+{
+    for (uint8_t portIndex = 0; portIndex < MAX_MSP_PORT_COUNT; portIndex++) {
+        mspPort_t *candidateMspPort = &mspPorts[portIndex];
+        if (candidateMspPort->port && candidateMspPort->descriptor == descriptor) {
+            return candidateMspPort->port->identifier;
+        }
+    }
+
+    return SERIAL_PORT_NONE;
+}
+
+mspVersion_e getMspSerialPortVersionByDescriptor(mspDescriptor_t descriptor)
+{
+    for (uint8_t portIndex = 0; portIndex < MAX_MSP_PORT_COUNT; portIndex++) {
+        mspPort_t *candidateMspPort = &mspPorts[portIndex];
+        if (candidateMspPort->port && candidateMspPort->descriptor == descriptor) {
+            return candidateMspPort->mspVersion;
+        }
+    }
+
+    return MSP_V1;
 }
 
 #if defined(USE_TELEMETRY)
@@ -329,7 +353,8 @@ static int mspSerialEncode(mspPort_t *msp, mspPacket_t *packet, mspVersion_e msp
 {
     static const uint8_t mspMagic[MSP_VERSION_COUNT] = MSP_VERSION_MAGIC_INITIALIZER;
     const int dataLen = sbufBytesRemaining(&packet->buf);
-    uint8_t hdrBuf[16] = { '$', mspMagic[mspVersion], packet->result == MSP_RESULT_ERROR ? '!' : '>'};
+    const uint8_t directionChar = (packet->direction == MSP_DIRECTION_REQUEST) ? '<' : (packet->result == MSP_RESULT_ERROR ? '!' : '>');
+    uint8_t hdrBuf[16] = { '$', mspMagic[mspVersion], directionChar };
     uint8_t crcBuf[2];
     uint8_t checksum;
     int hdrLen = 3;
@@ -496,7 +521,7 @@ static void mspSerialProcessReceivedReply(mspPort_t *msp, mspProcessReplyFnPtr m
         .result = 0,
     };
 
-    mspProcessReplyFn(&reply);
+    mspProcessReplyFn(msp->descriptor, &reply);
 
     msp->c_state = MSP_IDLE;
 }

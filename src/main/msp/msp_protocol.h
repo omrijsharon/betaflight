@@ -242,6 +242,7 @@
 #define MSP_CAMERA_INFO                 190 // out message          Get active camera geometry / intrinsics / FOV / orientation / health
 #define MSP_CAMERA_GET_LOCK             191 // out message          Get current raw camera lock result
 #define MSP_CAMERA_LOCK                 192 // out message          Get FC-cached camera lock state
+#define MSP_SET_CAMERA_INFO             193 // in message           Set active camera geometry / intrinsics / FOV / orientation / health
 
 //
 // Multwii original MSP commands

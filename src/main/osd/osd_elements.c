@@ -350,6 +350,15 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
     const int32_t baseCellY = floorDivInt(spriteVy, 3);
     const uint8_t *glyphs = cameraLockPhaseGlyphs[phaseY][phaseX];
 
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(spriteVx, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(spriteVy, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)phaseX);
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)phaseY);
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(baseCellX, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(baseCellY, INT16_MIN, INT16_MAX));
+
     for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
         const int tileCol = tileIndex % 3;
         const int tileRow = tileIndex / 3;

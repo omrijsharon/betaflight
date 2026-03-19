@@ -4142,6 +4142,37 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
         break;
 #endif
 
+#ifdef USE_FINAL
+    case MSP_SET_CAMERA_INFO:
+        {
+            cameraLockInfo_t info;
+            const serialPortIdentifier_e portIdentifier = getMspSerialPortIdentifierByDescriptor(srcDesc);
+            const mspVersion_e mspVersion = getMspSerialPortVersionByDescriptor(srcDesc);
+
+            if (dataSize != 27) {
+                return MSP_RESULT_ERROR;
+            }
+
+            info.width_px = sbufReadU16(src);
+            info.height_px = sbufReadU16(src);
+            info.fx_px_x1000 = sbufReadU32(src);
+            info.fy_px_x1000 = sbufReadU32(src);
+            info.cx_px_x1000 = sbufReadU32(src);
+            info.cy_px_x1000 = sbufReadU32(src);
+            info.hfov_deg = sbufReadU8(src);
+            info.vfov_deg = sbufReadU8(src);
+            info.tilt_angle_deg = (int8_t)sbufReadU8(src);
+            info.orientation = sbufReadU8(src);
+            info.lock_rate_hz = sbufReadU16(src);
+            info.flags = sbufReadU8(src);
+
+            if (!cameraLockBindFromSource(&info, srcDesc, portIdentifier, mspVersion, micros())) {
+                return MSP_RESULT_ERROR;
+            }
+        }
+        break;
+#endif
+
     case MSP_SET_TX_INFO:
         setRssiMsp(sbufReadU8(src));
 
@@ -4576,10 +4607,13 @@ mspResult_e mspFcProcessCommand(mspDescriptor_t srcDesc, mspPacket_t *cmd, mspPa
     return ret;
 }
 
-void mspFcProcessReply(mspPacket_t *reply)
+void mspFcProcessReply(mspDescriptor_t srcDesc, mspPacket_t *reply)
 {
     sbuf_t *src = &reply->buf;
     UNUSED(src); // potentially unused depending on compile options.
+#ifndef USE_FINAL
+    UNUSED(srcDesc);
+#endif
 
     switch (reply->cmd) {
     case MSP_ANALOG:
@@ -4599,10 +4633,25 @@ void mspFcProcessReply(mspPacket_t *reply)
 #endif
         }
         break;
+#ifdef USE_FINAL
+    case MSP_CAMERA_GET_LOCK:
+        if (sbufBytesRemaining(src) == 5) {
+            cameraLockRawState_t state;
+
+            state.flags = sbufReadU8(src);
+            state.x_px = sbufReadU16(src);
+            state.y_px = sbufReadU16(src);
+            cameraLockHandleReply(srcDesc, &state, micros());
+        }
+        break;
+#endif
     }
 }
 
 void mspInit(void)
 {
     initActiveBoxIds();
+#ifdef USE_FINAL
+    cameraLockInit();
+#endif
 }
