@@ -472,6 +472,31 @@ The projected FPV pixel is the direct input to the existing phased lock overlay:
 
 So the OSD element no longer uses the seeker image dimensions whenever a valid FPV projection path is active.
 
+### Optimized implementation form
+
+For the current Betaflight implementation, the per-sample runtime path should use a precomputed projective matrix:
+
+```text
+H = K_fpv * R_fpv_from_seeker * K_seeker^-1
+```
+
+Then each seeker lock sample is projected as:
+
+```text
+p_seek = [u, v, 1]^T
+p_fpv_h = H * p_seek
+u2 = p_fpv_h.x / p_fpv_h.z
+v2 = p_fpv_h.y / p_fpv_h.z
+```
+
+This is mathematically equivalent to:
+
+1. seeker pixel -> normalized seeker ray
+2. relative rotation into FPV camera frame
+3. FPV pinhole projection
+
+but it moves more work into the config-change path and reduces the per-sample runtime cost.
+
 ## Step 3B: Seeker -> Betaflight Body-Frame Angles
 
 If we only want body-frame line-of-sight angles, use `r_body = [Xb, Yb, Zb]`.

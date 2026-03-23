@@ -69,7 +69,7 @@ static float cameraLockFpvCxPx;
 static float cameraLockFpvCyPx;
 static uint16_t cameraLockFpvWidthPx;
 static uint16_t cameraLockFpvHeightPx;
-static float cameraLockRFpvFromSeeker[3][3];
+static float cameraLockProjectionHomography[3][3];
 
 static uint16_t constrainToUint16(uint32_t value)
 {
@@ -217,7 +217,7 @@ static void cameraLockResetProjectionCache(void)
     cameraLockFpvCyPx = 0.0f;
     cameraLockFpvWidthPx = 0;
     cameraLockFpvHeightPx = 0;
-    memset(cameraLockRFpvFromSeeker, 0, sizeof(cameraLockRFpvFromSeeker));
+    memset(cameraLockProjectionHomography, 0, sizeof(cameraLockProjectionHomography));
 }
 
 static void cameraLockRebuildProjectionCache(void)
@@ -266,6 +266,9 @@ static void cameraLockRebuildProjectionCache(void)
     float seekerBody[3][3];
     float fpvBody[3][3];
     float fpvBodyTranspose[3][3];
+    float kFpv[3][3];
+    float kSeekInv[3][3];
+    float kFpvTimesR[3][3];
 
     cameraLockBuildAxisMap(axisMap);
     cameraLockBuildOrientationMatrix(cameraLockSeekerInfo.orientation, seekerOrientation);
@@ -276,7 +279,22 @@ static void cameraLockRebuildProjectionCache(void)
     cameraLockMatrixMultiply(seekerTilt, seekerBody, seekerBody);
     cameraLockMatrixMultiply(fpvTilt, axisMap, fpvBody);
     cameraLockMatrixTranspose(fpvBody, fpvBodyTranspose);
-    cameraLockMatrixMultiply(fpvBodyTranspose, seekerBody, cameraLockRFpvFromSeeker);
+    cameraLockMatrixMultiply(fpvBodyTranspose, seekerBody, kFpvTimesR);
+
+    cameraLockMatrixSetIdentity(kFpv);
+    kFpv[0][0] = cameraLockFpvFxPx;
+    kFpv[0][2] = cameraLockFpvCxPx;
+    kFpv[1][1] = cameraLockFpvFyPx;
+    kFpv[1][2] = cameraLockFpvCyPx;
+
+    cameraLockMatrixSetIdentity(kSeekInv);
+    kSeekInv[0][0] = 1.0f / cameraLockSeekerFxPx;
+    kSeekInv[0][2] = -cameraLockSeekerCxPx / cameraLockSeekerFxPx;
+    kSeekInv[1][1] = 1.0f / cameraLockSeekerFyPx;
+    kSeekInv[1][2] = -cameraLockSeekerCyPx / cameraLockSeekerFyPx;
+
+    cameraLockMatrixMultiply(kFpv, kFpvTimesR, kFpvTimesR);
+    cameraLockMatrixMultiply(kFpvTimesR, kSeekInv, cameraLockProjectionHomography);
 
     cameraLockProjectionCacheValid = true;
 }
@@ -526,21 +544,22 @@ bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDispla
     target->sourceY_px = state->y_px;
 
     if (cameraLockProjectionCacheValid) {
-        const float seekerRay[3] = {
-            ((float)state->x_px - cameraLockSeekerCxPx) / cameraLockSeekerFxPx,
-            ((float)state->y_px - cameraLockSeekerCyPx) / cameraLockSeekerFyPx,
+        const float seekerPixel[3] = {
+            (float)state->x_px,
+            (float)state->y_px,
             1.0f
         };
-        float fpvRay[3];
+        float projectedPoint[3];
 
-        cameraLockMatrixVectorMultiply(cameraLockRFpvFromSeeker, seekerRay, fpvRay);
+        cameraLockMatrixVectorMultiply(cameraLockProjectionHomography, seekerPixel, projectedPoint);
 
-        if (fpvRay[2] <= 1.0e-6f) {
+        if (projectedPoint[2] <= 1.0e-6f) {
             return false;
         }
 
-        const float projectedX = (cameraLockFpvFxPx * (fpvRay[0] / fpvRay[2])) + cameraLockFpvCxPx;
-        const float projectedY = (cameraLockFpvFyPx * (fpvRay[1] / fpvRay[2])) + cameraLockFpvCyPx;
+        const float invZ = 1.0f / projectedPoint[2];
+        const float projectedX = projectedPoint[0] * invZ;
+        const float projectedY = projectedPoint[1] * invZ;
 
         if (!isfinite(projectedX) || !isfinite(projectedY)) {
             return false;
