@@ -394,18 +394,18 @@ bool BetaflightMSP::getRC(msp_rc_t &data) {
     return true;
 }
 
-bool BetaflightMSP::getCameraInfo(msp_camera_info_t &data) {
-    if (!request(MSP_CAMERA_INFO, nullptr, 0)) {
+bool BetaflightMSP::getSeekerCamInfo(msp_seeker_cam_info_t &data) {
+    if (!request(MSP_SEEKER_CAM_INFO, nullptr, 0)) {
         return false;
     }
 
     uint8_t offset = 0;
     data.width_px = readU16(_rxPayload, offset);
     data.height_px = readU16(_rxPayload, offset);
-    data.fx_px_x1000 = readU32(_rxPayload, offset);
-    data.fy_px_x1000 = readU32(_rxPayload, offset);
-    data.cx_px_x1000 = readU32(_rxPayload, offset);
-    data.cy_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.fx_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.fy_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.cx_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.cy_px_x1000 = readU32(_rxPayload, offset);
     data.hfov_deg = _rxPayload[offset++];
     data.vfov_deg = _rxPayload[offset++];
     data.tilt_angle_deg = (int8_t)_rxPayload[offset++];
@@ -439,6 +439,22 @@ bool BetaflightMSP::getCameraLock(msp_camera_lock_t &data) {
     data.x_px = readU16(_rxPayload, offset);
     data.y_px = readU16(_rxPayload, offset);
     data.age_ms = readU16(_rxPayload, offset);
+
+    return true;
+}
+
+bool BetaflightMSP::getFpvCamInfo(msp_fpv_cam_info_t &data) {
+    if (!request(MSP_FPV_CAM_INFO, nullptr, 0)) {
+        return false;
+    }
+
+    uint8_t offset = 0;
+    data.intrinsics.fx_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.fy_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.cx_px_x1000 = readU32(_rxPayload, offset);
+    data.intrinsics.cy_px_x1000 = readU32(_rxPayload, offset);
+    data.tilt_angle_deg = (int8_t)_rxPayload[offset++];
+    data.flags = _rxPayload[offset++];
 
     return true;
 }
@@ -481,16 +497,16 @@ bool BetaflightMSP::setRawGPS(uint8_t fixType, uint8_t numSat, int32_t lat, int3
     return command(MSP_SET_RAW_GPS, payload, offset);
 }
 
-bool BetaflightMSP::setCameraInfo(const msp_camera_info_t &data) {
+bool BetaflightMSP::setSeekerCamInfo(const msp_seeker_cam_info_t &data) {
     uint8_t payload[27];
     uint8_t offset = 0;
 
     writeU16(payload, offset, data.width_px);
     writeU16(payload, offset, data.height_px);
-    writeU32(payload, offset, data.fx_px_x1000);
-    writeU32(payload, offset, data.fy_px_x1000);
-    writeU32(payload, offset, data.cx_px_x1000);
-    writeU32(payload, offset, data.cy_px_x1000);
+    writeU32(payload, offset, data.intrinsics.fx_px_x1000);
+    writeU32(payload, offset, data.intrinsics.fy_px_x1000);
+    writeU32(payload, offset, data.intrinsics.cx_px_x1000);
+    writeU32(payload, offset, data.intrinsics.cy_px_x1000);
     payload[offset++] = data.hfov_deg;
     payload[offset++] = data.vfov_deg;
     payload[offset++] = (uint8_t)data.tilt_angle_deg;
@@ -498,7 +514,21 @@ bool BetaflightMSP::setCameraInfo(const msp_camera_info_t &data) {
     writeU16(payload, offset, data.lock_rate_hz);
     payload[offset++] = data.flags;
 
-    return request(MSP_SET_CAMERA_INFO, payload, offset);
+    return request(MSP_SET_SEEKER_CAM_INFO, payload, offset);
+}
+
+bool BetaflightMSP::setFpvCamInfo(const msp_fpv_cam_info_t &data) {
+    uint8_t payload[18];
+    uint8_t offset = 0;
+
+    writeU32(payload, offset, data.intrinsics.fx_px_x1000);
+    writeU32(payload, offset, data.intrinsics.fy_px_x1000);
+    writeU32(payload, offset, data.intrinsics.cx_px_x1000);
+    writeU32(payload, offset, data.intrinsics.cy_px_x1000);
+    payload[offset++] = (uint8_t)data.tilt_angle_deg;
+    payload[offset++] = data.flags;
+
+    return request(MSP_SET_FPV_CAM_INFO, payload, offset);
 }
 
 bool BetaflightMSP::replyCameraRawLock(const msp_camera_raw_lock_t &data) {

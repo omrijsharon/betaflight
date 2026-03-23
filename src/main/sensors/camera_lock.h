@@ -32,11 +32,17 @@
 
 #define CAMERA_LOCK_INTRINSIC_SCALE          1000.0f
 #define CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS 100
-#define CAMERA_LOCK_INFO_FLAG_VALID            (1U << 0)
-#define CAMERA_LOCK_INFO_FLAG_CROPPED          (1U << 1)
-#define CAMERA_LOCK_INFO_FLAG_INTRINSICS_VALID (1U << 2)
-#define CAMERA_LOCK_INFO_FLAG_FOV_VALID        (1U << 3)
-#define CAMERA_LOCK_INFO_FLAG_HEALTHY          (1U << 4)
+#define CAMERA_LOCK_REQUIRED_FPV_INFO_TIMEOUT_US 500000
+
+#define SEEKER_CAM_INFO_FLAG_VALID                   (1U << 0)
+#define SEEKER_CAM_INFO_FLAG_CROPPED                 (1U << 1)
+#define SEEKER_CAM_INFO_FLAG_INTRINSICS_VALID        (1U << 2)
+#define SEEKER_CAM_INFO_FLAG_FOV_VALID               (1U << 3)
+#define SEEKER_CAM_INFO_FLAG_HEALTHY                 (1U << 4)
+#define SEEKER_CAM_INFO_FLAG_FPV_PROJECTION_REQUIRED (1U << 5)
+
+#define FPV_CAM_INFO_FLAG_VALID                      (1U << 0)
+#define FPV_CAM_INFO_FLAG_INTRINSICS_VALID           (1U << 1)
 
 #define CAMERA_LOCK_FLAG_DETECTED              (1U << 0)
 #define CAMERA_LOCK_FLAG_HEALTHY               (1U << 1)
@@ -49,20 +55,30 @@ typedef enum {
     CAMERA_LOCK_ORIENTATION_MINUS_90 = 3,
 } cameraLockOrientation_e;
 
-typedef struct cameraLockInfo_s {
-    uint16_t width_px;
-    uint16_t height_px;
+typedef struct cameraIntrinsics_s {
     uint32_t fx_px_x1000;
     uint32_t fy_px_x1000;
     uint32_t cx_px_x1000;
     uint32_t cy_px_x1000;
+} cameraIntrinsics_t;
+
+typedef struct seekerCamInfo_s {
+    uint16_t width_px;
+    uint16_t height_px;
+    cameraIntrinsics_t intrinsics;
     uint8_t hfov_deg;
     uint8_t vfov_deg;
     int8_t tilt_angle_deg;
     uint8_t orientation;
     uint16_t lock_rate_hz;
     uint8_t flags;
-} cameraLockInfo_t;
+} seekerCamInfo_t;
+
+typedef struct fpvCamInfo_s {
+    cameraIntrinsics_t intrinsics;
+    int8_t tilt_angle_deg;
+    uint8_t flags;
+} fpvCamInfo_t;
 
 typedef struct cameraLockRawState_s {
     uint8_t flags;
@@ -77,6 +93,19 @@ typedef struct cameraLockState_s {
     uint16_t age_ms;
 } cameraLockState_t;
 
+typedef struct cameraLockDisplayTarget_s {
+    bool projected;
+    bool clamped;
+    uint16_t sourceX_px;
+    uint16_t sourceY_px;
+    int32_t projectedX_px;
+    int32_t projectedY_px;
+    uint16_t displayX_px;
+    uint16_t displayY_px;
+    uint16_t width_px;
+    uint16_t height_px;
+} cameraLockDisplayTarget_t;
+
 typedef struct cameraLockConfig_s {
     int8_t portOverride;
 } cameraLockConfig_t;
@@ -86,13 +115,15 @@ PG_DECLARE(cameraLockConfig_t, cameraLockConfig);
 void cameraLockInit(void);
 void cameraLockReset(void);
 
-void cameraLockSetInfo(const cameraLockInfo_t *info);
-bool cameraLockBindFromSource(const cameraLockInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs);
-const cameraLockInfo_t *cameraLockGetInfo(void);
-float cameraLockGetFxPx(void);
-float cameraLockGetFyPx(void);
-float cameraLockGetCxPx(void);
-float cameraLockGetCyPx(void);
+void cameraLockSetSeekerInfo(const seekerCamInfo_t *info);
+bool cameraLockBindSeekerFromSource(const seekerCamInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs);
+bool cameraLockSetFpvInfo(const fpvCamInfo_t *info, timeUs_t currentTimeUs);
+const seekerCamInfo_t *cameraLockGetSeekerInfo(void);
+const fpvCamInfo_t *cameraLockGetFpvInfo(void);
+bool cameraLockHasValidSeekerInfo(void);
+bool cameraLockHasValidFpvInfo(void);
+bool cameraLockIsFpvProjectionRequired(void);
+bool cameraLockShouldShowNoFpvConfigWarning(void);
 
 void cameraLockSetRawState(const cameraLockRawState_t *state, timeUs_t currentTimeUs);
 void cameraLockClear(timeUs_t currentTimeUs);
@@ -101,6 +132,7 @@ void cameraLockHandleReply(mspDescriptor_t srcDesc, const cameraLockRawState_t *
 
 void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16_t freshnessThresholdMs);
 void cameraLockGetRawState(cameraLockRawState_t *state);
+bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDisplayTarget_t *target);
 
 bool cameraLockHasDetection(void);
 bool cameraLockIsHealthy(void);

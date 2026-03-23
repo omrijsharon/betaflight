@@ -2222,20 +2222,31 @@ case MSP_NAME:
 
         break;
 #ifdef USE_FINAL
-    case MSP_CAMERA_INFO:
+    case MSP_SEEKER_CAM_INFO:
         {
-            const cameraLockInfo_t *info = cameraLockGetInfo();
+            const seekerCamInfo_t *info = cameraLockGetSeekerInfo();
             sbufWriteU16(dst, info->width_px);
             sbufWriteU16(dst, info->height_px);
-            sbufWriteU32(dst, info->fx_px_x1000);
-            sbufWriteU32(dst, info->fy_px_x1000);
-            sbufWriteU32(dst, info->cx_px_x1000);
-            sbufWriteU32(dst, info->cy_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.fx_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.fy_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.cx_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.cy_px_x1000);
             sbufWriteU8(dst, info->hfov_deg);
             sbufWriteU8(dst, info->vfov_deg);
             sbufWriteU8(dst, (uint8_t)info->tilt_angle_deg);
             sbufWriteU8(dst, info->orientation);
             sbufWriteU16(dst, info->lock_rate_hz);
+            sbufWriteU8(dst, info->flags);
+        }
+        break;
+    case MSP_FPV_CAM_INFO:
+        {
+            const fpvCamInfo_t *info = cameraLockGetFpvInfo();
+            sbufWriteU32(dst, info->intrinsics.fx_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.fy_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.cx_px_x1000);
+            sbufWriteU32(dst, info->intrinsics.cy_px_x1000);
+            sbufWriteU8(dst, (uint8_t)info->tilt_angle_deg);
             sbufWriteU8(dst, info->flags);
         }
         break;
@@ -4143,9 +4154,9 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 #endif
 
 #ifdef USE_FINAL
-    case MSP_SET_CAMERA_INFO:
+    case MSP_SET_SEEKER_CAM_INFO:
         {
-            cameraLockInfo_t info;
+            seekerCamInfo_t info;
             const serialPortIdentifier_e portIdentifier = getMspSerialPortIdentifierByDescriptor(srcDesc);
             const mspVersion_e mspVersion = getMspSerialPortVersionByDescriptor(srcDesc);
 
@@ -4155,10 +4166,10 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 
             info.width_px = sbufReadU16(src);
             info.height_px = sbufReadU16(src);
-            info.fx_px_x1000 = sbufReadU32(src);
-            info.fy_px_x1000 = sbufReadU32(src);
-            info.cx_px_x1000 = sbufReadU32(src);
-            info.cy_px_x1000 = sbufReadU32(src);
+            info.intrinsics.fx_px_x1000 = sbufReadU32(src);
+            info.intrinsics.fy_px_x1000 = sbufReadU32(src);
+            info.intrinsics.cx_px_x1000 = sbufReadU32(src);
+            info.intrinsics.cy_px_x1000 = sbufReadU32(src);
             info.hfov_deg = sbufReadU8(src);
             info.vfov_deg = sbufReadU8(src);
             info.tilt_angle_deg = (int8_t)sbufReadU8(src);
@@ -4166,7 +4177,27 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             info.lock_rate_hz = sbufReadU16(src);
             info.flags = sbufReadU8(src);
 
-            if (!cameraLockBindFromSource(&info, srcDesc, portIdentifier, mspVersion, micros())) {
+            if (!cameraLockBindSeekerFromSource(&info, srcDesc, portIdentifier, mspVersion, micros())) {
+                return MSP_RESULT_ERROR;
+            }
+        }
+        break;
+    case MSP_SET_FPV_CAM_INFO:
+        {
+            fpvCamInfo_t info;
+
+            if (dataSize != 18) {
+                return MSP_RESULT_ERROR;
+            }
+
+            info.intrinsics.fx_px_x1000 = sbufReadU32(src);
+            info.intrinsics.fy_px_x1000 = sbufReadU32(src);
+            info.intrinsics.cx_px_x1000 = sbufReadU32(src);
+            info.intrinsics.cy_px_x1000 = sbufReadU32(src);
+            info.tilt_angle_deg = (int8_t)sbufReadU8(src);
+            info.flags = sbufReadU8(src);
+
+            if (!cameraLockSetFpvInfo(&info, micros())) {
                 return MSP_RESULT_ERROR;
             }
         }

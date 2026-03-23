@@ -20,8 +20,10 @@
 
 #include "platform.h"
 
+#include <math.h>
 #include <string.h>
 
+#include "common/maths.h"
 #include "msp/msp_protocol.h"
 #include "msp/msp_serial.h"
 #include "pg/pg_ids.h"
@@ -35,14 +37,19 @@ PG_RESET_TEMPLATE(cameraLockConfig_t, cameraLockConfig,
     .portOverride = SERIAL_PORT_NONE,
 );
 
-static cameraLockInfo_t cameraLockInfo;
+static seekerCamInfo_t cameraLockSeekerInfo;
+static fpvCamInfo_t cameraLockFpvInfo;
 static cameraLockRawState_t cameraLockRawState;
 static timeUs_t cameraLockLastUpdateTimeUs;
 static bool cameraLockHasEverUpdated;
-static bool cameraLockInfoValid;
+static bool cameraLockSeekerInfoValid;
+static bool cameraLockFpvInfoValid;
 static bool cameraLockIsBound;
 static bool cameraLockPollOutstanding;
 static bool cameraLockShortTimeoutActive;
+static bool cameraLockWaitingForFpvInfo;
+static bool cameraLockShowNoFpvConfigWarning;
+static bool cameraLockProjectionCacheValid;
 static mspDescriptor_t cameraLockBoundDescriptor;
 static serialPortIdentifier_e cameraLockBoundPortIdentifier;
 static mspVersion_e cameraLockBoundMspVersion;
@@ -51,6 +58,18 @@ static timeUs_t cameraLockLastPollSentUs;
 static timeUs_t cameraLockLastReplyReceivedUs;
 static timeUs_t cameraLockShortTimeoutUs;
 static timeUs_t cameraLockLongTimeoutUs;
+static timeUs_t cameraLockWaitingForFpvInfoSinceUs;
+static float cameraLockSeekerFxPx;
+static float cameraLockSeekerFyPx;
+static float cameraLockSeekerCxPx;
+static float cameraLockSeekerCyPx;
+static float cameraLockFpvFxPx;
+static float cameraLockFpvFyPx;
+static float cameraLockFpvCxPx;
+static float cameraLockFpvCyPx;
+static uint16_t cameraLockFpvWidthPx;
+static uint16_t cameraLockFpvHeightPx;
+static float cameraLockRFpvFromSeeker[3][3];
 
 static uint16_t constrainToUint16(uint32_t value)
 {
@@ -58,11 +77,6 @@ static uint16_t constrainToUint16(uint32_t value)
         return UINT16_MAX;
     }
     return (uint16_t)value;
-}
-
-static float decodeIntrinsicPx(uint32_t valueX1000)
-{
-    return valueX1000 / CAMERA_LOCK_INTRINSIC_SCALE;
 }
 
 static serialPortIdentifier_e cameraLockResolveBindPort(serialPortIdentifier_e discoveredPortIdentifier)
@@ -75,9 +89,200 @@ static serialPortIdentifier_e cameraLockResolveBindPort(serialPortIdentifier_e d
     return discoveredPortIdentifier;
 }
 
+static float cameraLockIntrinsicToFloat(uint32_t value_x1000)
+{
+    return value_x1000 / CAMERA_LOCK_INTRINSIC_SCALE;
+}
+
+static void cameraLockMatrixSetIdentity(float matrix[3][3])
+{
+    memset(matrix, 0, sizeof(float) * 9);
+    matrix[0][0] = 1.0f;
+    matrix[1][1] = 1.0f;
+    matrix[2][2] = 1.0f;
+}
+
+static void cameraLockMatrixMultiply(const float left[3][3], const float right[3][3], float out[3][3])
+{
+    float result[3][3];
+
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            result[row][col] = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                result[row][col] += left[row][i] * right[i][col];
+            }
+        }
+    }
+
+    memcpy(out, result, sizeof(result));
+}
+
+static void cameraLockMatrixTranspose(const float in[3][3], float out[3][3])
+{
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            out[row][col] = in[col][row];
+        }
+    }
+}
+
+static void cameraLockMatrixVectorMultiply(const float matrix[3][3], const float vector[3], float out[3])
+{
+    for (int row = 0; row < 3; row++) {
+        out[row] = 0.0f;
+        for (int col = 0; col < 3; col++) {
+            out[row] += matrix[row][col] * vector[col];
+        }
+    }
+}
+
+static void cameraLockBuildAxisMap(float out[3][3])
+{
+    cameraLockMatrixSetIdentity(out);
+    out[0][0] = 0.0f;
+    out[0][1] = 0.0f;
+    out[0][2] = 1.0f;
+    out[1][0] = -1.0f;
+    out[1][1] = 0.0f;
+    out[1][2] = 0.0f;
+    out[2][0] = 0.0f;
+    out[2][1] = -1.0f;
+    out[2][2] = 0.0f;
+}
+
+static void cameraLockBuildOrientationMatrix(uint8_t orientation, float out[3][3])
+{
+    cameraLockMatrixSetIdentity(out);
+
+    switch (orientation) {
+    case CAMERA_LOCK_ORIENTATION_90:
+        out[1][1] = 0.0f;
+        out[1][2] = -1.0f;
+        out[2][1] = 1.0f;
+        out[2][2] = 0.0f;
+        break;
+    case CAMERA_LOCK_ORIENTATION_180:
+        out[1][1] = -1.0f;
+        out[2][2] = -1.0f;
+        break;
+    case CAMERA_LOCK_ORIENTATION_MINUS_90:
+        out[1][1] = 0.0f;
+        out[1][2] = 1.0f;
+        out[2][1] = -1.0f;
+        out[2][2] = 0.0f;
+        break;
+    case CAMERA_LOCK_ORIENTATION_0:
+    default:
+        break;
+    }
+}
+
+static void cameraLockBuildTiltMatrix(int8_t tiltAngleDeg, float out[3][3])
+{
+    const float tiltRadians = DEGREES_TO_RADIANS((float)tiltAngleDeg);
+    const float cosTilt = cos_approx(tiltRadians);
+    const float sinTilt = sin_approx(tiltRadians);
+
+    cameraLockMatrixSetIdentity(out);
+    out[0][0] = cosTilt;
+    out[0][2] = sinTilt;
+    out[2][0] = -sinTilt;
+    out[2][2] = cosTilt;
+}
+
+static int32_t cameraLockRoundFloatToInt32(float value)
+{
+    if (value >= (float)INT32_MAX) {
+        return INT32_MAX;
+    }
+
+    if (value <= (float)INT32_MIN) {
+        return INT32_MIN;
+    }
+
+    return lrintf(value);
+}
+
+static void cameraLockResetProjectionCache(void)
+{
+    cameraLockProjectionCacheValid = false;
+    cameraLockSeekerFxPx = 0.0f;
+    cameraLockSeekerFyPx = 0.0f;
+    cameraLockSeekerCxPx = 0.0f;
+    cameraLockSeekerCyPx = 0.0f;
+    cameraLockFpvFxPx = 0.0f;
+    cameraLockFpvFyPx = 0.0f;
+    cameraLockFpvCxPx = 0.0f;
+    cameraLockFpvCyPx = 0.0f;
+    cameraLockFpvWidthPx = 0;
+    cameraLockFpvHeightPx = 0;
+    memset(cameraLockRFpvFromSeeker, 0, sizeof(cameraLockRFpvFromSeeker));
+}
+
+static void cameraLockRebuildProjectionCache(void)
+{
+    cameraLockResetProjectionCache();
+
+    if (!cameraLockSeekerInfoValid || !cameraLockFpvInfoValid) {
+        return;
+    }
+
+    if ((cameraLockSeekerInfo.flags & (SEEKER_CAM_INFO_FLAG_VALID | SEEKER_CAM_INFO_FLAG_INTRINSICS_VALID))
+            != (SEEKER_CAM_INFO_FLAG_VALID | SEEKER_CAM_INFO_FLAG_INTRINSICS_VALID)
+        || (cameraLockFpvInfo.flags & (FPV_CAM_INFO_FLAG_VALID | FPV_CAM_INFO_FLAG_INTRINSICS_VALID))
+            != (FPV_CAM_INFO_FLAG_VALID | FPV_CAM_INFO_FLAG_INTRINSICS_VALID)) {
+        return;
+    }
+
+    cameraLockSeekerFxPx = cameraLockIntrinsicToFloat(cameraLockSeekerInfo.intrinsics.fx_px_x1000);
+    cameraLockSeekerFyPx = cameraLockIntrinsicToFloat(cameraLockSeekerInfo.intrinsics.fy_px_x1000);
+    cameraLockSeekerCxPx = cameraLockIntrinsicToFloat(cameraLockSeekerInfo.intrinsics.cx_px_x1000);
+    cameraLockSeekerCyPx = cameraLockIntrinsicToFloat(cameraLockSeekerInfo.intrinsics.cy_px_x1000);
+    cameraLockFpvFxPx = cameraLockIntrinsicToFloat(cameraLockFpvInfo.intrinsics.fx_px_x1000);
+    cameraLockFpvFyPx = cameraLockIntrinsicToFloat(cameraLockFpvInfo.intrinsics.fy_px_x1000);
+    cameraLockFpvCxPx = cameraLockIntrinsicToFloat(cameraLockFpvInfo.intrinsics.cx_px_x1000);
+    cameraLockFpvCyPx = cameraLockIntrinsicToFloat(cameraLockFpvInfo.intrinsics.cy_px_x1000);
+
+    if (cameraLockSeekerFxPx <= 0.0f || cameraLockSeekerFyPx <= 0.0f
+        || cameraLockFpvFxPx <= 0.0f || cameraLockFpvFyPx <= 0.0f) {
+        return;
+    }
+
+    const uint32_t widthEstimate = (uint32_t)lrintf((2.0f * cameraLockFpvCxPx) + 1.0f);
+    const uint32_t heightEstimate = (uint32_t)lrintf((2.0f * cameraLockFpvCyPx) + 1.0f);
+
+    if (widthEstimate <= 1 || heightEstimate <= 1 || widthEstimate > UINT16_MAX || heightEstimate > UINT16_MAX) {
+        return;
+    }
+
+    cameraLockFpvWidthPx = (uint16_t)widthEstimate;
+    cameraLockFpvHeightPx = (uint16_t)heightEstimate;
+
+    float axisMap[3][3];
+    float seekerOrientation[3][3];
+    float seekerTilt[3][3];
+    float fpvTilt[3][3];
+    float seekerBody[3][3];
+    float fpvBody[3][3];
+    float fpvBodyTranspose[3][3];
+
+    cameraLockBuildAxisMap(axisMap);
+    cameraLockBuildOrientationMatrix(cameraLockSeekerInfo.orientation, seekerOrientation);
+    cameraLockBuildTiltMatrix(cameraLockSeekerInfo.tilt_angle_deg, seekerTilt);
+    cameraLockBuildTiltMatrix(cameraLockFpvInfo.tilt_angle_deg, fpvTilt);
+
+    cameraLockMatrixMultiply(seekerOrientation, axisMap, seekerBody);
+    cameraLockMatrixMultiply(seekerTilt, seekerBody, seekerBody);
+    cameraLockMatrixMultiply(fpvTilt, axisMap, fpvBody);
+    cameraLockMatrixTranspose(fpvBody, fpvBodyTranspose);
+    cameraLockMatrixMultiply(fpvBodyTranspose, seekerBody, cameraLockRFpvFromSeeker);
+
+    cameraLockProjectionCacheValid = true;
+}
+
 static void cameraLockResetLinkState(void)
 {
-    cameraLockInfoValid = false;
     cameraLockIsBound = false;
     cameraLockPollOutstanding = false;
     cameraLockShortTimeoutActive = false;
@@ -91,6 +296,35 @@ static void cameraLockResetLinkState(void)
     cameraLockLongTimeoutUs = 0;
 }
 
+static void cameraLockResetConfigState(void)
+{
+    memset(&cameraLockSeekerInfo, 0, sizeof(cameraLockSeekerInfo));
+    memset(&cameraLockFpvInfo, 0, sizeof(cameraLockFpvInfo));
+    cameraLockSeekerInfoValid = false;
+    cameraLockFpvInfoValid = false;
+    cameraLockWaitingForFpvInfo = false;
+    cameraLockShowNoFpvConfigWarning = false;
+    cameraLockWaitingForFpvInfoSinceUs = 0;
+    cameraLockResetProjectionCache();
+}
+
+static bool cameraLockProjectionRequiredFromSeekerInfo(const seekerCamInfo_t *info)
+{
+    return info && ((info->flags & SEEKER_CAM_INFO_FLAG_FPV_PROJECTION_REQUIRED) != 0);
+}
+
+static void cameraLockPreparePolling(timeUs_t currentTimeUs)
+{
+    cameraLockPollOutstanding = false;
+    cameraLockShortTimeoutActive = false;
+    cameraLockShowNoFpvConfigWarning = false;
+    cameraLockWaitingForFpvInfo = false;
+    cameraLockWaitingForFpvInfoSinceUs = 0;
+    cameraLockLastPollSentUs = (currentTimeUs > cameraLockPollPeriodUs) ? (currentTimeUs - cameraLockPollPeriodUs) : 0;
+    cameraLockLastReplyReceivedUs = currentTimeUs;
+    cameraLockClear(currentTimeUs);
+}
+
 void cameraLockInit(void)
 {
     cameraLockReset();
@@ -98,25 +332,28 @@ void cameraLockInit(void)
 
 void cameraLockReset(void)
 {
-    memset(&cameraLockInfo, 0, sizeof(cameraLockInfo));
     memset(&cameraLockRawState, 0, sizeof(cameraLockRawState));
     cameraLockLastUpdateTimeUs = 0;
     cameraLockHasEverUpdated = false;
+    cameraLockResetConfigState();
     cameraLockResetLinkState();
 }
 
-void cameraLockSetInfo(const cameraLockInfo_t *info)
+void cameraLockSetSeekerInfo(const seekerCamInfo_t *info)
 {
     if (!info) {
-        memset(&cameraLockInfo, 0, sizeof(cameraLockInfo));
-        cameraLockInfoValid = false;
+        memset(&cameraLockSeekerInfo, 0, sizeof(cameraLockSeekerInfo));
+        cameraLockSeekerInfoValid = false;
+        cameraLockRebuildProjectionCache();
         return;
     }
 
-    cameraLockInfo = *info;
+    cameraLockSeekerInfo = *info;
+    cameraLockSeekerInfoValid = true;
+    cameraLockRebuildProjectionCache();
 }
 
-bool cameraLockBindFromSource(const cameraLockInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs)
+bool cameraLockBindSeekerFromSource(const seekerCamInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs)
 {
     const serialPortIdentifier_e bindPortIdentifier = cameraLockResolveBindPort(portIdentifier);
 
@@ -124,47 +361,81 @@ bool cameraLockBindFromSource(const cameraLockInfo_t *info, mspDescriptor_t srcD
         return false;
     }
 
-    cameraLockSetInfo(info);
-    cameraLockInfoValid = true;
+    cameraLockSetSeekerInfo(info);
+    memset(&cameraLockFpvInfo, 0, sizeof(cameraLockFpvInfo));
+    cameraLockFpvInfoValid = false;
+    cameraLockWaitingForFpvInfo = false;
+    cameraLockShowNoFpvConfigWarning = false;
+    cameraLockWaitingForFpvInfoSinceUs = 0;
+    cameraLockResetProjectionCache();
+    cameraLockResetLinkState();
     cameraLockIsBound = true;
-    cameraLockPollOutstanding = false;
-    cameraLockShortTimeoutActive = false;
     cameraLockBoundDescriptor = srcDesc;
     cameraLockBoundPortIdentifier = bindPortIdentifier;
     cameraLockBoundMspVersion = mspVersion;
     cameraLockPollPeriodUs = info->lock_rate_hz ? (1000 * 1000) / info->lock_rate_hz : 0;
     cameraLockShortTimeoutUs = cameraLockPollPeriodUs * 2;
     cameraLockLongTimeoutUs = cameraLockPollPeriodUs * 10;
-    cameraLockLastPollSentUs = (currentTimeUs > cameraLockPollPeriodUs) ? (currentTimeUs - cameraLockPollPeriodUs) : 0;
-    cameraLockLastReplyReceivedUs = currentTimeUs;
-    cameraLockClear(currentTimeUs);
+
+    if (cameraLockProjectionRequiredFromSeekerInfo(info)) {
+        cameraLockWaitingForFpvInfo = true;
+        cameraLockShowNoFpvConfigWarning = false;
+        cameraLockWaitingForFpvInfoSinceUs = currentTimeUs;
+        cameraLockLastPollSentUs = 0;
+        cameraLockLastReplyReceivedUs = 0;
+        cameraLockClear(currentTimeUs);
+    } else {
+        cameraLockPreparePolling(currentTimeUs);
+    }
 
     return true;
 }
 
-const cameraLockInfo_t *cameraLockGetInfo(void)
+bool cameraLockSetFpvInfo(const fpvCamInfo_t *info, timeUs_t currentTimeUs)
 {
-    return &cameraLockInfo;
+    if (!info || !cameraLockSeekerInfoValid || !cameraLockIsBound) {
+        return false;
+    }
+
+    cameraLockFpvInfo = *info;
+    cameraLockFpvInfoValid = true;
+    cameraLockRebuildProjectionCache();
+
+    if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo) && cameraLockProjectionCacheValid) {
+        cameraLockPreparePolling(currentTimeUs);
+    }
+
+    return cameraLockProjectionCacheValid;
 }
 
-float cameraLockGetFxPx(void)
+const seekerCamInfo_t *cameraLockGetSeekerInfo(void)
 {
-    return decodeIntrinsicPx(cameraLockInfo.fx_px_x1000);
+    return &cameraLockSeekerInfo;
 }
 
-float cameraLockGetFyPx(void)
+const fpvCamInfo_t *cameraLockGetFpvInfo(void)
 {
-    return decodeIntrinsicPx(cameraLockInfo.fy_px_x1000);
+    return &cameraLockFpvInfo;
 }
 
-float cameraLockGetCxPx(void)
+bool cameraLockHasValidSeekerInfo(void)
 {
-    return decodeIntrinsicPx(cameraLockInfo.cx_px_x1000);
+    return cameraLockSeekerInfoValid;
 }
 
-float cameraLockGetCyPx(void)
+bool cameraLockHasValidFpvInfo(void)
 {
-    return decodeIntrinsicPx(cameraLockInfo.cy_px_x1000);
+    return cameraLockProjectionCacheValid;
+}
+
+bool cameraLockIsFpvProjectionRequired(void)
+{
+    return cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo);
+}
+
+bool cameraLockShouldShowNoFpvConfigWarning(void)
+{
+    return cameraLockShowNoFpvConfigWarning;
 }
 
 void cameraLockSetRawState(const cameraLockRawState_t *state, timeUs_t currentTimeUs)
@@ -199,7 +470,14 @@ void cameraLockHandleReply(mspDescriptor_t srcDesc, const cameraLockRawState_t *
 
 void cameraLockService(timeUs_t currentTimeUs)
 {
-    if (!cameraLockInfoValid || !cameraLockIsBound || !cameraLockPollPeriodUs) {
+    if (!cameraLockSeekerInfoValid || !cameraLockIsBound || !cameraLockPollPeriodUs) {
+        return;
+    }
+
+    if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo) && !cameraLockProjectionCacheValid) {
+        if (cameraLockWaitingForFpvInfo && cmpTimeUs(currentTimeUs, cameraLockWaitingForFpvInfoSinceUs) >= CAMERA_LOCK_REQUIRED_FPV_INFO_TIMEOUT_US) {
+            cameraLockShowNoFpvConfigWarning = true;
+        }
         return;
     }
 
@@ -207,6 +485,7 @@ void cameraLockService(timeUs_t currentTimeUs)
 
     if (cameraLockLongTimeoutUs && sinceLastReplyUs >= (timeDelta_t)cameraLockLongTimeoutUs) {
         cameraLockClear(currentTimeUs);
+        cameraLockResetConfigState();
         cameraLockResetLinkState();
         return;
     }
@@ -232,6 +511,66 @@ void cameraLockGetRawState(cameraLockRawState_t *state)
     }
 
     *state = cameraLockRawState;
+}
+
+bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDisplayTarget_t *target)
+{
+    if (!state || !target || !cameraLockSeekerInfoValid
+        || (cameraLockSeekerInfo.flags & SEEKER_CAM_INFO_FLAG_VALID) == 0
+        || cameraLockSeekerInfo.width_px <= 1 || cameraLockSeekerInfo.height_px <= 1) {
+        return false;
+    }
+
+    memset(target, 0, sizeof(*target));
+    target->sourceX_px = state->x_px;
+    target->sourceY_px = state->y_px;
+
+    if (cameraLockProjectionCacheValid) {
+        const float seekerRay[3] = {
+            ((float)state->x_px - cameraLockSeekerCxPx) / cameraLockSeekerFxPx,
+            ((float)state->y_px - cameraLockSeekerCyPx) / cameraLockSeekerFyPx,
+            1.0f
+        };
+        float fpvRay[3];
+
+        cameraLockMatrixVectorMultiply(cameraLockRFpvFromSeeker, seekerRay, fpvRay);
+
+        if (fpvRay[2] <= 1.0e-6f) {
+            return false;
+        }
+
+        const float projectedX = (cameraLockFpvFxPx * (fpvRay[0] / fpvRay[2])) + cameraLockFpvCxPx;
+        const float projectedY = (cameraLockFpvFyPx * (fpvRay[1] / fpvRay[2])) + cameraLockFpvCyPx;
+
+        if (!isfinite(projectedX) || !isfinite(projectedY)) {
+            return false;
+        }
+
+        target->projected = true;
+        target->width_px = cameraLockFpvWidthPx;
+        target->height_px = cameraLockFpvHeightPx;
+        target->projectedX_px = cameraLockRoundFloatToInt32(projectedX);
+        target->projectedY_px = cameraLockRoundFloatToInt32(projectedY);
+        const int clampedX = constrain(target->projectedX_px, 0, cameraLockFpvWidthPx - 1);
+        const int clampedY = constrain(target->projectedY_px, 0, cameraLockFpvHeightPx - 1);
+        target->displayX_px = (uint16_t)clampedX;
+        target->displayY_px = (uint16_t)clampedY;
+        target->clamped = (clampedX != target->projectedX_px) || (clampedY != target->projectedY_px);
+        return true;
+    }
+
+    if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo)) {
+        return false;
+    }
+
+    target->width_px = cameraLockSeekerInfo.width_px;
+    target->height_px = cameraLockSeekerInfo.height_px;
+    target->projectedX_px = state->x_px;
+    target->projectedY_px = state->y_px;
+    target->displayX_px = (uint16_t)constrain(state->x_px, 0, cameraLockSeekerInfo.width_px - 1);
+    target->displayY_px = (uint16_t)constrain(state->y_px, 0, cameraLockSeekerInfo.height_px - 1);
+    target->clamped = (target->displayX_px != state->x_px) || (target->displayY_px != state->y_px);
+    return true;
 }
 
 uint16_t cameraLockGetAgeMs(timeUs_t currentTimeUs)

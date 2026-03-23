@@ -325,7 +325,7 @@ static int osdDisplayWriteChar(osdElementParms_t *element, uint8_t x, uint8_t y,
 void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTimeUs)
 {
     cameraLockState_t lockState;
-    const cameraLockInfo_t *lockInfo = cameraLockGetInfo();
+    cameraLockDisplayTarget_t displayTarget;
 
     cameraLockGetState(&lockState, currentTimeUs, CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS);
 
@@ -334,14 +334,14 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
         return;
     }
 
-    if (!(lockInfo->flags & CAMERA_LOCK_INFO_FLAG_VALID) || lockInfo->width_px <= 1 || lockInfo->height_px <= 1) {
+    if (!cameraLockGetDisplayTarget(&lockState, &displayTarget) || displayTarget.width_px <= 1 || displayTarget.height_px <= 1) {
         return;
     }
 
     const int32_t virtualCols = osdDisplayPort->cols * 2;
     const int32_t virtualRows = osdDisplayPort->rows * 3;
-    const int32_t targetVx = (int32_t)(((uint32_t)lockState.x_px * (virtualCols - 1) + ((lockInfo->width_px - 1) / 2U)) / (lockInfo->width_px - 1));
-    const int32_t targetVy = (int32_t)(((uint32_t)lockState.y_px * (virtualRows - 1) + ((lockInfo->height_px - 1) / 2U)) / (lockInfo->height_px - 1));
+    const int32_t targetVx = (int32_t)(((uint32_t)displayTarget.displayX_px * (virtualCols - 1) + ((displayTarget.width_px - 1) / 2U)) / (displayTarget.width_px - 1));
+    const int32_t targetVy = (int32_t)(((uint32_t)displayTarget.displayY_px * (virtualRows - 1) + ((displayTarget.height_px - 1) / 2U)) / (displayTarget.height_px - 1));
     const int32_t spriteVx = targetVx - 3;
     const int32_t spriteVy = targetVy - 3;
     const int32_t phaseX = positiveModInt(spriteVx, 2);
@@ -352,12 +352,12 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
 
     DEBUG_SET(DEBUG_CAMERA_LOCK, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
     DEBUG_SET(DEBUG_CAMERA_LOCK, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(spriteVx, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(spriteVy, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)phaseX);
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)phaseY);
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(baseCellX, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(baseCellY, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(displayTarget.sourceX_px, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(displayTarget.sourceY_px, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)constrain(displayTarget.projectedX_px, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)constrain(displayTarget.projectedY_px, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(displayTarget.displayX_px, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(displayTarget.displayY_px, INT16_MIN, INT16_MAX));
 
     for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
         const int tileCol = tileIndex % 3;

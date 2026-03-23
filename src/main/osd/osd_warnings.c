@@ -59,6 +59,10 @@
 
 #include "rx/rx.h"
 
+#ifdef USE_FINAL
+#include "sensors/camera_lock.h"
+#endif
+
 #include "sensors/acceleration.h"
 #include "sensors/adcinternal.h"
 #include "sensors/battery.h"
@@ -112,6 +116,14 @@ void renderOsdWarning(char *warningText, bool *blinking, uint8_t *displayAttr)
             armingDisabledUpdateTimeUs = 0;
         }
     }
+
+#ifdef USE_FINAL
+    if (cameraLockShouldShowNoFpvConfigWarning()) {
+        tfp_sprintf(warningText, "NO FPV CFG");
+        *displayAttr = DISPLAYPORT_SEVERITY_WARNING;
+        return;
+    }
+#endif
 
 #if defined(USE_ACC)
     if (IS_RC_MODE_ACTIVE(BOXFREEFALLARM) && !ARMING_FLAG(ARMED)){ // if freefallarm is active and not armed

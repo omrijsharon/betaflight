@@ -239,10 +239,12 @@
 #define MSP_OSD_CANVAS                  189 // out message          Get osd canvas size COLSxROWS
 
 // Custom camera lock messages (private fork)
-#define MSP_CAMERA_INFO                 190 // out message          Get active camera geometry / intrinsics / FOV / orientation / health
+#define MSP_SEEKER_CAM_INFO             190 // out message          Get cached seeker camera config
 #define MSP_CAMERA_GET_LOCK             191 // out message          Get current raw camera lock result
 #define MSP_CAMERA_LOCK                 192 // out message          Get FC-cached camera lock state
-#define MSP_SET_CAMERA_INFO             193 // in message           Set active camera geometry / intrinsics / FOV / orientation / health
+#define MSP_SET_SEEKER_CAM_INFO         193 // in message           Set seeker camera registration/config
+#define MSP_FPV_CAM_INFO                194 // out message          Get cached FPV camera projection config
+#define MSP_SET_FPV_CAM_INFO            195 // in message           Set FPV camera projection config
 
 //
 // Multwii original MSP commands

@@ -149,10 +149,12 @@
 #define MSP_OSD_CANVAS                  189  // out message - Get osd canvas size
 
 // FINAL private camera-lock commands
-#define MSP_CAMERA_INFO                 190  // out message - Get active camera geometry / camera-lock info
+#define MSP_SEEKER_CAM_INFO             190  // out message - Get cached seeker camera config
 #define MSP_CAMERA_GET_LOCK             191  // out message - Get current raw camera lock
 #define MSP_CAMERA_LOCK                 192  // out message - Get FC-derived camera lock state
-#define MSP_SET_CAMERA_INFO             193  // in message - Set active camera geometry / camera-lock info
+#define MSP_SET_SEEKER_CAM_INFO         193  // in message - Set seeker camera registration/config
+#define MSP_FPV_CAM_INFO                194  // out message - Get cached FPV camera projection config
+#define MSP_SET_FPV_CAM_INFO            195  // in message - Set FPV camera projection config
 
 // Multiwii original MSP commands
 #define MSP_STATUS                      101  // out message - cycletime & errors_count & sensor present & box activation
@@ -338,18 +340,28 @@ struct msp_rc_t {
     uint16_t channels[18];      // RC channel values (1000-2000)
 };
 
-struct msp_camera_info_t {
-    uint16_t width_px;
-    uint16_t height_px;
+struct msp_camera_intrinsics_t {
     uint32_t fx_px_x1000;
     uint32_t fy_px_x1000;
     uint32_t cx_px_x1000;
     uint32_t cy_px_x1000;
+};
+
+struct msp_seeker_cam_info_t {
+    uint16_t width_px;
+    uint16_t height_px;
+    msp_camera_intrinsics_t intrinsics;
     uint8_t hfov_deg;
     uint8_t vfov_deg;
     int8_t tilt_angle_deg;
     uint8_t orientation;
     uint16_t lock_rate_hz;
+    uint8_t flags;
+};
+
+struct msp_fpv_cam_info_t {
+    msp_camera_intrinsics_t intrinsics;
+    int8_t tilt_angle_deg;
     uint8_t flags;
 };
 
@@ -410,15 +422,17 @@ public:
     bool getCompGPS(msp_comp_gps_t &data);
     bool getBatteryState(msp_battery_state_t &data);
     bool getRC(msp_rc_t &data);
-    bool getCameraInfo(msp_camera_info_t &data);
+    bool getSeekerCamInfo(msp_seeker_cam_info_t &data);
     bool getCameraRawLock(msp_camera_raw_lock_t &data);
     bool getCameraLock(msp_camera_lock_t &data);
+    bool getFpvCamInfo(msp_fpv_cam_info_t &data);
     
     // Convenience functions for common commands
     bool setRawRC(uint16_t *channels, uint8_t channelCount);
     bool setGPSHome(int32_t lat, int32_t lon, uint16_t altitudeM);
     bool setRawGPS(uint8_t fixType, uint8_t numSat, int32_t lat, int32_t lon, int16_t altM, uint16_t groundSpeed);
-    bool setCameraInfo(const msp_camera_info_t &data);
+    bool setSeekerCamInfo(const msp_seeker_cam_info_t &data);
+    bool setFpvCamInfo(const msp_fpv_cam_info_t &data);
     bool replyCameraRawLock(const msp_camera_raw_lock_t &data);
     
 private:
