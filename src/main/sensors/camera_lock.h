@@ -47,6 +47,7 @@
 #define CAMERA_LOCK_FLAG_DETECTED              (1U << 0)
 #define CAMERA_LOCK_FLAG_HEALTHY               (1U << 1)
 #define CAMERA_LOCK_FLAG_FRESH                 (1U << 2)
+#define CAMERA_LOCK_CORNER_COUNT               4U
 
 typedef enum {
     CAMERA_LOCK_ORIENTATION_0 = 0,
@@ -106,6 +107,11 @@ typedef struct cameraLockDisplayTarget_s {
     uint16_t height_px;
 } cameraLockDisplayTarget_t;
 
+typedef struct cameraLockCornerOverlay_s {
+    bool valid;
+    cameraLockDisplayTarget_t corners[CAMERA_LOCK_CORNER_COUNT];
+} cameraLockCornerOverlay_t;
+
 typedef struct cameraLockConfig_s {
     int8_t portOverride;
 } cameraLockConfig_t;
@@ -133,6 +139,7 @@ void cameraLockHandleReply(mspDescriptor_t srcDesc, const cameraLockRawState_t *
 void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16_t freshnessThresholdMs);
 void cameraLockGetRawState(cameraLockRawState_t *state);
 bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDisplayTarget_t *target);
+bool cameraLockGetCornerOverlay(cameraLockCornerOverlay_t *overlay);
 
 bool cameraLockHasDetection(void);
 bool cameraLockIsHealthy(void);

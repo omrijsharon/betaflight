@@ -398,10 +398,14 @@ uses two display modes:
    - project seeker `x_px`, `y_px` into FPV image coordinates using seeker/FPV intrinsics and mount rotation
    - clamp the projected FPV pixel to the visible FPV image bounds derived from `cx`, `cy`
    - map that clamped FPV pixel onto the phased OSD grid
+   - draw the live center lock sprite from that projected point
+   - draw four additional cached corner sprites from the projected seeker image corners
 4. otherwise, for seeker-only systems with no FPV projection path:
    - use seeker `width_px`, `height_px`, `x_px`, `y_px`
    - map directly onto the phased OSD grid
-5. draw the `3x2` lock sprite
+   - draw the live center lock sprite
+   - draw four additional cached corner sprites from the seeker image corners
+5. render corner sprites first, then the center sprite last
 
 Current milestone behavior:
 
@@ -409,6 +413,7 @@ Current milestone behavior:
 - if valid FPV projection config exists, the overlay uses projected FPV placement
 - projection-required systems suppress polling and the overlay until FPV config exists
 - if projection math fails for a frame, the overlay is suppressed for that frame
+- seeker-corner projections are cached and only rebuilt when seeker/FPV config changes
 
 ## PC Bridge Text Protocol
 

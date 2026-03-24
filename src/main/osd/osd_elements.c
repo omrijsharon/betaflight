@@ -295,6 +295,49 @@ static int32_t positiveModInt(int32_t value, int32_t divisor)
     int32_t mod = value % divisor;
     return (mod < 0) ? (mod + divisor) : mod;
 }
+
+static void osdDrawCameraLockSprite(displayPort_t *osdDisplayPort, const cameraLockDisplayTarget_t *displayTarget, bool updateDebug)
+{
+    if (!displayTarget || displayTarget->width_px <= 1 || displayTarget->height_px <= 1) {
+        return;
+    }
+
+    const int32_t virtualCols = osdDisplayPort->cols * 2;
+    const int32_t virtualRows = osdDisplayPort->rows * 3;
+    const int32_t targetVx = (int32_t)(((uint32_t)displayTarget->displayX_px * (virtualCols - 1) + ((displayTarget->width_px - 1) / 2U)) / (displayTarget->width_px - 1));
+    const int32_t targetVy = (int32_t)(((uint32_t)displayTarget->displayY_px * (virtualRows - 1) + ((displayTarget->height_px - 1) / 2U)) / (displayTarget->height_px - 1));
+    const int32_t spriteVx = targetVx - 3;
+    const int32_t spriteVy = targetVy - 3;
+    const int32_t phaseX = positiveModInt(spriteVx, 2);
+    const int32_t phaseY = positiveModInt(spriteVy, 3);
+    const int32_t baseCellX = floorDivInt(spriteVx, 2);
+    const int32_t baseCellY = floorDivInt(spriteVy, 3);
+    const uint8_t *glyphs = cameraLockPhaseGlyphs[phaseY][phaseX];
+
+    if (updateDebug) {
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(displayTarget->sourceX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(displayTarget->sourceY_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)constrain(displayTarget->projectedX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)constrain(displayTarget->projectedY_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(displayTarget->displayX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(displayTarget->displayY_px, INT16_MIN, INT16_MAX));
+    }
+
+    for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
+        const int tileCol = tileIndex % 3;
+        const int tileRow = tileIndex / 3;
+        const int drawX = baseCellX + tileCol;
+        const int drawY = baseCellY + tileRow;
+
+        if (drawX < 0 || drawX >= osdDisplayPort->cols || drawY < 0 || drawY >= osdDisplayPort->rows) {
+            continue;
+        }
+
+        displayWriteChar(osdDisplayPort, (uint8_t)drawX, (uint8_t)drawY, DISPLAYPORT_SEVERITY_NORMAL, glyphs[tileIndex]);
+    }
+}
 #endif
 
 // Return whether element is a SYS element and needs special handling
@@ -326,6 +369,7 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
 {
     cameraLockState_t lockState;
     cameraLockDisplayTarget_t displayTarget;
+    cameraLockCornerOverlay_t cornerOverlay;
 
     cameraLockGetState(&lockState, currentTimeUs, CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS);
 
@@ -338,39 +382,13 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
         return;
     }
 
-    const int32_t virtualCols = osdDisplayPort->cols * 2;
-    const int32_t virtualRows = osdDisplayPort->rows * 3;
-    const int32_t targetVx = (int32_t)(((uint32_t)displayTarget.displayX_px * (virtualCols - 1) + ((displayTarget.width_px - 1) / 2U)) / (displayTarget.width_px - 1));
-    const int32_t targetVy = (int32_t)(((uint32_t)displayTarget.displayY_px * (virtualRows - 1) + ((displayTarget.height_px - 1) / 2U)) / (displayTarget.height_px - 1));
-    const int32_t spriteVx = targetVx - 3;
-    const int32_t spriteVy = targetVy - 3;
-    const int32_t phaseX = positiveModInt(spriteVx, 2);
-    const int32_t phaseY = positiveModInt(spriteVy, 3);
-    const int32_t baseCellX = floorDivInt(spriteVx, 2);
-    const int32_t baseCellY = floorDivInt(spriteVy, 3);
-    const uint8_t *glyphs = cameraLockPhaseGlyphs[phaseY][phaseX];
-
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(displayTarget.sourceX_px, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(displayTarget.sourceY_px, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)constrain(displayTarget.projectedX_px, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)constrain(displayTarget.projectedY_px, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(displayTarget.displayX_px, INT16_MIN, INT16_MAX));
-    DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(displayTarget.displayY_px, INT16_MIN, INT16_MAX));
-
-    for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
-        const int tileCol = tileIndex % 3;
-        const int tileRow = tileIndex / 3;
-        const int drawX = baseCellX + tileCol;
-        const int drawY = baseCellY + tileRow;
-
-        if (drawX < 0 || drawX >= osdDisplayPort->cols || drawY < 0 || drawY >= osdDisplayPort->rows) {
-            continue;
+    if (cameraLockGetCornerOverlay(&cornerOverlay)) {
+        for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
+            osdDrawCameraLockSprite(osdDisplayPort, &cornerOverlay.corners[i], false);
         }
-
-        displayWriteChar(osdDisplayPort, (uint8_t)drawX, (uint8_t)drawY, DISPLAYPORT_SEVERITY_NORMAL, glyphs[tileIndex]);
     }
+
+    osdDrawCameraLockSprite(osdDisplayPort, &displayTarget, true);
 }
 #endif
 

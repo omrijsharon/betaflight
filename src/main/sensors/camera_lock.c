@@ -70,6 +70,9 @@ static float cameraLockFpvCyPx;
 static uint16_t cameraLockFpvWidthPx;
 static uint16_t cameraLockFpvHeightPx;
 static float cameraLockProjectionHomography[3][3];
+static cameraLockCornerOverlay_t cameraLockCornerOverlay;
+
+static bool cameraLockProjectionRequiredFromSeekerInfo(const seekerCamInfo_t *info);
 
 static uint16_t constrainToUint16(uint32_t value)
 {
@@ -102,7 +105,7 @@ static void cameraLockMatrixSetIdentity(float matrix[3][3])
     matrix[2][2] = 1.0f;
 }
 
-static void cameraLockMatrixMultiply(const float left[3][3], const float right[3][3], float out[3][3])
+static void cameraLockMatrixMultiply(float left[3][3], float right[3][3], float out[3][3])
 {
     float result[3][3];
 
@@ -118,7 +121,7 @@ static void cameraLockMatrixMultiply(const float left[3][3], const float right[3
     memcpy(out, result, sizeof(result));
 }
 
-static void cameraLockMatrixTranspose(const float in[3][3], float out[3][3])
+static void cameraLockMatrixTranspose(float in[3][3], float out[3][3])
 {
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 3; col++) {
@@ -127,7 +130,7 @@ static void cameraLockMatrixTranspose(const float in[3][3], float out[3][3])
     }
 }
 
-static void cameraLockMatrixVectorMultiply(const float matrix[3][3], const float vector[3], float out[3])
+static void cameraLockMatrixVectorMultiply(float matrix[3][3], float vector[3], float out[3])
 {
     for (int row = 0; row < 3; row++) {
         out[row] = 0.0f;
@@ -204,6 +207,144 @@ static int32_t cameraLockRoundFloatToInt32(float value)
     return lrintf(value);
 }
 
+static bool cameraLockProjectPixelToDisplayTarget(uint16_t sourceX_px, uint16_t sourceY_px, cameraLockDisplayTarget_t *target)
+{
+    if (!target || !cameraLockSeekerInfoValid
+        || (cameraLockSeekerInfo.flags & SEEKER_CAM_INFO_FLAG_VALID) == 0
+        || cameraLockSeekerInfo.width_px <= 1 || cameraLockSeekerInfo.height_px <= 1) {
+        return false;
+    }
+
+    memset(target, 0, sizeof(*target));
+    target->sourceX_px = sourceX_px;
+    target->sourceY_px = sourceY_px;
+
+    if (cameraLockProjectionCacheValid) {
+        float seekerPixel[3] = {
+            (float)sourceX_px,
+            (float)sourceY_px,
+            1.0f
+        };
+        float projectedPoint[3];
+
+        cameraLockMatrixVectorMultiply(cameraLockProjectionHomography, seekerPixel, projectedPoint);
+
+        if (projectedPoint[2] <= 1.0e-6f) {
+            return false;
+        }
+
+        const float invZ = 1.0f / projectedPoint[2];
+        const float projectedX = projectedPoint[0] * invZ;
+        const float projectedY = projectedPoint[1] * invZ;
+
+        if (!isfinite(projectedX) || !isfinite(projectedY)) {
+            return false;
+        }
+
+        target->projected = true;
+        target->width_px = cameraLockFpvWidthPx;
+        target->height_px = cameraLockFpvHeightPx;
+        target->projectedX_px = cameraLockRoundFloatToInt32(projectedX);
+        target->projectedY_px = cameraLockRoundFloatToInt32(projectedY);
+        const int clampedX = constrain(target->projectedX_px, 0, cameraLockFpvWidthPx - 1);
+        const int clampedY = constrain(target->projectedY_px, 0, cameraLockFpvHeightPx - 1);
+        target->displayX_px = (uint16_t)clampedX;
+        target->displayY_px = (uint16_t)clampedY;
+        target->clamped = (clampedX != target->projectedX_px) || (clampedY != target->projectedY_px);
+        return true;
+    }
+
+    if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo)) {
+        return false;
+    }
+
+    target->width_px = cameraLockSeekerInfo.width_px;
+    target->height_px = cameraLockSeekerInfo.height_px;
+    target->projectedX_px = sourceX_px;
+    target->projectedY_px = sourceY_px;
+    target->displayX_px = (uint16_t)constrain(sourceX_px, 0, cameraLockSeekerInfo.width_px - 1);
+    target->displayY_px = (uint16_t)constrain(sourceY_px, 0, cameraLockSeekerInfo.height_px - 1);
+    target->clamped = (target->displayX_px != sourceX_px) || (target->displayY_px != sourceY_px);
+    return true;
+}
+
+static int32_t cameraLockPolygonArea2(const cameraLockDisplayTarget_t corners[CAMERA_LOCK_CORNER_COUNT])
+{
+    int32_t area2 = 0;
+
+    for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
+        const unsigned next = (i + 1U) % CAMERA_LOCK_CORNER_COUNT;
+        area2 += ((int32_t)corners[i].displayX_px * (int32_t)corners[next].displayY_px)
+            - ((int32_t)corners[next].displayX_px * (int32_t)corners[i].displayY_px);
+    }
+
+    return area2;
+}
+
+static bool cameraLockCornerOverlayIsDegenerate(const cameraLockCornerOverlay_t *overlay)
+{
+    unsigned uniqueCount = 0;
+    uint32_t packedPoints[CAMERA_LOCK_CORNER_COUNT];
+
+    for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
+        packedPoints[i] = ((uint32_t)overlay->corners[i].displayX_px << 16) | overlay->corners[i].displayY_px;
+    }
+
+    for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
+        bool isNew = true;
+
+        for (unsigned j = 0; j < i; j++) {
+            if (packedPoints[i] == packedPoints[j]) {
+                isNew = false;
+                break;
+            }
+        }
+
+        if (isNew) {
+            uniqueCount++;
+        }
+    }
+
+    if (uniqueCount < 3U) {
+        return true;
+    }
+
+    return ABS(cameraLockPolygonArea2(overlay->corners)) < 2;
+}
+
+static void cameraLockRebuildCornerOverlay(void)
+{
+    memset(&cameraLockCornerOverlay, 0, sizeof(cameraLockCornerOverlay));
+
+    if (!cameraLockSeekerInfoValid || (cameraLockSeekerInfo.flags & SEEKER_CAM_INFO_FLAG_VALID) == 0
+        || cameraLockSeekerInfo.width_px <= 1 || cameraLockSeekerInfo.height_px <= 1) {
+        return;
+    }
+
+    const uint16_t widthMax = cameraLockSeekerInfo.width_px - 1U;
+    const uint16_t heightMax = cameraLockSeekerInfo.height_px - 1U;
+    const uint16_t sourceCorners[CAMERA_LOCK_CORNER_COUNT][2] = {
+        { 0U, 0U },
+        { widthMax, 0U },
+        { widthMax, heightMax },
+        { 0U, heightMax },
+    };
+
+    for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
+        if (!cameraLockProjectPixelToDisplayTarget(sourceCorners[i][0], sourceCorners[i][1], &cameraLockCornerOverlay.corners[i])) {
+            memset(&cameraLockCornerOverlay, 0, sizeof(cameraLockCornerOverlay));
+            return;
+        }
+    }
+
+    if (cameraLockCornerOverlayIsDegenerate(&cameraLockCornerOverlay)) {
+        memset(&cameraLockCornerOverlay, 0, sizeof(cameraLockCornerOverlay));
+        return;
+    }
+
+    cameraLockCornerOverlay.valid = true;
+}
+
 static void cameraLockResetProjectionCache(void)
 {
     cameraLockProjectionCacheValid = false;
@@ -218,6 +359,7 @@ static void cameraLockResetProjectionCache(void)
     cameraLockFpvWidthPx = 0;
     cameraLockFpvHeightPx = 0;
     memset(cameraLockProjectionHomography, 0, sizeof(cameraLockProjectionHomography));
+    memset(&cameraLockCornerOverlay, 0, sizeof(cameraLockCornerOverlay));
 }
 
 static void cameraLockRebuildProjectionCache(void)
@@ -297,6 +439,7 @@ static void cameraLockRebuildProjectionCache(void)
     cameraLockMatrixMultiply(kFpvTimesR, kSeekInv, cameraLockProjectionHomography);
 
     cameraLockProjectionCacheValid = true;
+    cameraLockRebuildCornerOverlay();
 }
 
 static void cameraLockResetLinkState(void)
@@ -369,6 +512,7 @@ void cameraLockSetSeekerInfo(const seekerCamInfo_t *info)
     cameraLockSeekerInfo = *info;
     cameraLockSeekerInfoValid = true;
     cameraLockRebuildProjectionCache();
+    cameraLockRebuildCornerOverlay();
 }
 
 bool cameraLockBindSeekerFromSource(const seekerCamInfo_t *info, mspDescriptor_t srcDesc, serialPortIdentifier_e portIdentifier, mspVersion_e mspVersion, timeUs_t currentTimeUs)
@@ -386,6 +530,7 @@ bool cameraLockBindSeekerFromSource(const seekerCamInfo_t *info, mspDescriptor_t
     cameraLockShowNoFpvConfigWarning = false;
     cameraLockWaitingForFpvInfoSinceUs = 0;
     cameraLockResetProjectionCache();
+    cameraLockRebuildCornerOverlay();
     cameraLockResetLinkState();
     cameraLockIsBound = true;
     cameraLockBoundDescriptor = srcDesc;
@@ -418,6 +563,7 @@ bool cameraLockSetFpvInfo(const fpvCamInfo_t *info, timeUs_t currentTimeUs)
     cameraLockFpvInfo = *info;
     cameraLockFpvInfoValid = true;
     cameraLockRebuildProjectionCache();
+    cameraLockRebuildCornerOverlay();
 
     if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo) && cameraLockProjectionCacheValid) {
         cameraLockPreparePolling(currentTimeUs);
@@ -533,62 +679,20 @@ void cameraLockGetRawState(cameraLockRawState_t *state)
 
 bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDisplayTarget_t *target)
 {
-    if (!state || !target || !cameraLockSeekerInfoValid
-        || (cameraLockSeekerInfo.flags & SEEKER_CAM_INFO_FLAG_VALID) == 0
-        || cameraLockSeekerInfo.width_px <= 1 || cameraLockSeekerInfo.height_px <= 1) {
+    if (!state || !target) {
         return false;
     }
 
-    memset(target, 0, sizeof(*target));
-    target->sourceX_px = state->x_px;
-    target->sourceY_px = state->y_px;
+    return cameraLockProjectPixelToDisplayTarget(state->x_px, state->y_px, target);
+}
 
-    if (cameraLockProjectionCacheValid) {
-        const float seekerPixel[3] = {
-            (float)state->x_px,
-            (float)state->y_px,
-            1.0f
-        };
-        float projectedPoint[3];
-
-        cameraLockMatrixVectorMultiply(cameraLockProjectionHomography, seekerPixel, projectedPoint);
-
-        if (projectedPoint[2] <= 1.0e-6f) {
-            return false;
-        }
-
-        const float invZ = 1.0f / projectedPoint[2];
-        const float projectedX = projectedPoint[0] * invZ;
-        const float projectedY = projectedPoint[1] * invZ;
-
-        if (!isfinite(projectedX) || !isfinite(projectedY)) {
-            return false;
-        }
-
-        target->projected = true;
-        target->width_px = cameraLockFpvWidthPx;
-        target->height_px = cameraLockFpvHeightPx;
-        target->projectedX_px = cameraLockRoundFloatToInt32(projectedX);
-        target->projectedY_px = cameraLockRoundFloatToInt32(projectedY);
-        const int clampedX = constrain(target->projectedX_px, 0, cameraLockFpvWidthPx - 1);
-        const int clampedY = constrain(target->projectedY_px, 0, cameraLockFpvHeightPx - 1);
-        target->displayX_px = (uint16_t)clampedX;
-        target->displayY_px = (uint16_t)clampedY;
-        target->clamped = (clampedX != target->projectedX_px) || (clampedY != target->projectedY_px);
-        return true;
-    }
-
-    if (cameraLockProjectionRequiredFromSeekerInfo(&cameraLockSeekerInfo)) {
+bool cameraLockGetCornerOverlay(cameraLockCornerOverlay_t *overlay)
+{
+    if (!overlay || !cameraLockCornerOverlay.valid) {
         return false;
     }
 
-    target->width_px = cameraLockSeekerInfo.width_px;
-    target->height_px = cameraLockSeekerInfo.height_px;
-    target->projectedX_px = state->x_px;
-    target->projectedY_px = state->y_px;
-    target->displayX_px = (uint16_t)constrain(state->x_px, 0, cameraLockSeekerInfo.width_px - 1);
-    target->displayY_px = (uint16_t)constrain(state->y_px, 0, cameraLockSeekerInfo.height_px - 1);
-    target->clamped = (target->displayX_px != state->x_px) || (target->displayY_px != state->y_px);
+    *overlay = cameraLockCornerOverlay;
     return true;
 }
 

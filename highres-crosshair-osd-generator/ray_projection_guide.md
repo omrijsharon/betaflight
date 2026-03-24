@@ -472,6 +472,20 @@ The projected FPV pixel is the direct input to the existing phased lock overlay:
 
 So the OSD element no longer uses the seeker image dimensions whenever a valid FPV projection path is active.
 
+The same projection path is also used for the four static seeker image corners:
+
+1. seeker corner pixels:
+   - `(0, 0)`
+   - `(width - 1, 0)`
+   - `(width - 1, height - 1)`
+   - `(0, height - 1)`
+2. project each corner through the same cached `H`
+3. clamp each corner independently to the visible FPV rectangle
+4. convert each clamped corner to the phased OSD grid
+5. draw the four cached corner sprites before drawing the live center lock sprite
+
+These corner projections are static per config and should be rebuilt only when seeker or FPV info changes.
+
 ### Optimized implementation form
 
 For the current Betaflight implementation, the per-sample runtime path should use a precomputed projective matrix:
