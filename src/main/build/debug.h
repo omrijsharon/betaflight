@@ -124,7 +124,8 @@ typedef enum {
     DEBUG_MAG_ERROR,
     DEBUG_Z_EKF,
     DEBUG_BARO_ALTHOLD,
-    DEBUG_CAMERA_LOCK,
+    DEBUG_CAMERA_PROJ,
+    DEBUG_CAMERA_EF,
     DEBUG_COUNT
 } debugType_e;
 

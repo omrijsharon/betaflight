@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "common/maths.h"
+#include "flight/imu.h"
 #include "msp/msp_protocol.h"
 #include "msp/msp_serial.h"
 #include "pg/pg_ids.h"
@@ -265,6 +266,45 @@ static bool cameraLockProjectPixelToDisplayTarget(uint16_t sourceX_px, uint16_t 
     target->displayX_px = (uint16_t)constrain(sourceX_px, 0, cameraLockSeekerInfo.width_px - 1);
     target->displayY_px = (uint16_t)constrain(sourceY_px, 0, cameraLockSeekerInfo.height_px - 1);
     target->clamped = (target->displayX_px != sourceX_px) || (target->displayY_px != sourceY_px);
+    return true;
+}
+
+static bool cameraLockProjectPixelToBodyRay(uint16_t sourceX_px, uint16_t sourceY_px, float bodyRay[3])
+{
+    if (!bodyRay || !cameraLockSeekerInfoValid
+        || (cameraLockSeekerInfo.flags & (SEEKER_CAM_INFO_FLAG_VALID | SEEKER_CAM_INFO_FLAG_INTRINSICS_VALID))
+            != (SEEKER_CAM_INFO_FLAG_VALID | SEEKER_CAM_INFO_FLAG_INTRINSICS_VALID)
+        || cameraLockSeekerFxPx <= 0.0f || cameraLockSeekerFyPx <= 0.0f) {
+        return false;
+    }
+
+    float axisMap[3][3];
+    float seekerOrientation[3][3];
+    float seekerTilt[3][3];
+    float seekerBody[3][3];
+    float seekerPixel[3] = {
+        (float)sourceX_px,
+        (float)sourceY_px,
+        1.0f
+    };
+    float kSeekInv[3][3];
+    float seekerRay[3];
+
+    cameraLockBuildAxisMap(axisMap);
+    cameraLockBuildOrientationMatrix(cameraLockSeekerInfo.orientation, seekerOrientation);
+    cameraLockBuildTiltMatrix(cameraLockSeekerInfo.tilt_angle_deg, seekerTilt);
+
+    cameraLockMatrixMultiply(seekerOrientation, axisMap, seekerBody);
+    cameraLockMatrixMultiply(seekerTilt, seekerBody, seekerBody);
+
+    cameraLockMatrixSetIdentity(kSeekInv);
+    kSeekInv[0][0] = 1.0f / cameraLockSeekerFxPx;
+    kSeekInv[0][2] = -cameraLockSeekerCxPx / cameraLockSeekerFxPx;
+    kSeekInv[1][1] = 1.0f / cameraLockSeekerFyPx;
+    kSeekInv[1][2] = -cameraLockSeekerCyPx / cameraLockSeekerFyPx;
+
+    cameraLockMatrixVectorMultiply(kSeekInv, seekerPixel, seekerRay);
+    cameraLockMatrixVectorMultiply(seekerBody, seekerRay, bodyRay);
     return true;
 }
 
@@ -693,6 +733,33 @@ bool cameraLockGetCornerOverlay(cameraLockCornerOverlay_t *overlay)
     }
 
     *overlay = cameraLockCornerOverlay;
+    return true;
+}
+
+bool cameraLockGetRayDebug(const cameraLockState_t *state, cameraLockRayDebug_t *debugData)
+{
+    if (!state || !debugData) {
+        return false;
+    }
+
+    float bodyRay[3];
+
+    if (!cameraLockProjectPixelToBodyRay(state->x_px, state->y_px, bodyRay)) {
+        return false;
+    }
+
+    debugData->bodyRay[0] = bodyRay[0];
+    debugData->bodyRay[1] = bodyRay[1];
+    debugData->bodyRay[2] = bodyRay[2];
+
+    debugData->earthRay[0] = (rMat[0][0] * bodyRay[0]) + (rMat[0][1] * bodyRay[1]) + (rMat[0][2] * bodyRay[2]);
+    debugData->earthRay[1] = (rMat[1][0] * bodyRay[0]) + (rMat[1][1] * bodyRay[1]) + (rMat[1][2] * bodyRay[2]);
+    debugData->earthRay[2] = (rMat[2][0] * bodyRay[0]) + (rMat[2][1] * bodyRay[1]) + (rMat[2][2] * bodyRay[2]);
+
+    debugData->headingEfDeg = RADIANS_TO_DEGREES(atan2_approx(debugData->earthRay[1], debugData->earthRay[0]));
+    const float horizontalMagnitude = sqrtf((debugData->earthRay[0] * debugData->earthRay[0])
+        + (debugData->earthRay[1] * debugData->earthRay[1]));
+    debugData->elevationEfDeg = RADIANS_TO_DEGREES(atan2_approx(debugData->earthRay[2], horizontalMagnitude));
     return true;
 }
 

@@ -112,6 +112,13 @@ typedef struct cameraLockCornerOverlay_s {
     cameraLockDisplayTarget_t corners[CAMERA_LOCK_CORNER_COUNT];
 } cameraLockCornerOverlay_t;
 
+typedef struct cameraLockRayDebug_s {
+    float bodyRay[3];
+    float earthRay[3];
+    float headingEfDeg;
+    float elevationEfDeg;
+} cameraLockRayDebug_t;
+
 typedef struct cameraLockConfig_s {
     int8_t portOverride;
 } cameraLockConfig_t;
@@ -140,6 +147,7 @@ void cameraLockGetState(cameraLockState_t *state, timeUs_t currentTimeUs, uint16
 void cameraLockGetRawState(cameraLockRawState_t *state);
 bool cameraLockGetDisplayTarget(const cameraLockState_t *state, cameraLockDisplayTarget_t *target);
 bool cameraLockGetCornerOverlay(cameraLockCornerOverlay_t *overlay);
+bool cameraLockGetRayDebug(const cameraLockState_t *state, cameraLockRayDebug_t *debugData);
 
 bool cameraLockHasDetection(void);
 bool cameraLockIsHealthy(void);

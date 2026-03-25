@@ -557,6 +557,29 @@ If Betaflight-EF angles are sufficient, use:
 
 This is the correct place to use the FC attitude.
 
+### Debug mode mapping for this repo
+
+The implementation should keep two separate debug modes:
+
+- `CAMERA_PROJ`
+  - seeker -> FPV -> OSD projection debug
+  - keeps the current projection-oriented payload
+- `CAMERA_EF`
+  - body/earth-frame ray and earth-frame angle debug
+
+For `CAMERA_EF`, the chosen slot layout is:
+
+- `debug[0] = Xef * 1000`
+- `debug[1] = Yef * 1000`
+- `debug[2] = Zef * 1000`
+- `debug[3] = heading_ef_deg_x10`
+- `debug[4] = elevation_ef_deg_x10`
+- `debug[5] = Xb * 1000`
+- `debug[6] = Yb * 1000`
+- `debug[7] = Zb * 1000`
+
+The FC should not normalize these rays just for debug. Any optional normalization can be done off-board by the debug client.
+
 So the important correction is:
 
 - seeker pixel -> Betaflight earth angles is **not** just camera intrinsics + camera mount

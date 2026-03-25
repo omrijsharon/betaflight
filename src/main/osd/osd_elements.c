@@ -315,14 +315,14 @@ static void osdDrawCameraLockSprite(displayPort_t *osdDisplayPort, const cameraL
     const uint8_t *glyphs = cameraLockPhaseGlyphs[phaseY][phaseX];
 
     if (updateDebug) {
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 2, (int16_t)constrain(displayTarget->sourceX_px, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 3, (int16_t)constrain(displayTarget->sourceY_px, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 4, (int16_t)constrain(displayTarget->projectedX_px, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 5, (int16_t)constrain(displayTarget->projectedY_px, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 6, (int16_t)constrain(displayTarget->displayX_px, INT16_MIN, INT16_MAX));
-        DEBUG_SET(DEBUG_CAMERA_LOCK, 7, (int16_t)constrain(displayTarget->displayY_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 0, (int16_t)constrain(targetVx, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 1, (int16_t)constrain(targetVy, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 2, (int16_t)constrain(displayTarget->sourceX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 3, (int16_t)constrain(displayTarget->sourceY_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 4, (int16_t)constrain(displayTarget->projectedX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 5, (int16_t)constrain(displayTarget->projectedY_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 6, (int16_t)constrain(displayTarget->displayX_px, INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_PROJ, 7, (int16_t)constrain(displayTarget->displayY_px, INT16_MIN, INT16_MAX));
     }
 
     for (int tileIndex = 0; tileIndex < CAMERA_LOCK_TILE_COUNT; tileIndex++) {
@@ -370,6 +370,7 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
     cameraLockState_t lockState;
     cameraLockDisplayTarget_t displayTarget;
     cameraLockCornerOverlay_t cornerOverlay;
+    cameraLockRayDebug_t rayDebug;
 
     cameraLockGetState(&lockState, currentTimeUs, CAMERA_LOCK_DEFAULT_FRESHNESS_THRESHOLD_MS);
 
@@ -386,6 +387,17 @@ void osdDrawCameraLockOverlay(displayPort_t *osdDisplayPort, timeUs_t currentTim
         for (unsigned i = 0; i < CAMERA_LOCK_CORNER_COUNT; i++) {
             osdDrawCameraLockSprite(osdDisplayPort, &cornerOverlay.corners[i], false);
         }
+    }
+
+    if (cameraLockGetRayDebug(&lockState, &rayDebug)) {
+        DEBUG_SET(DEBUG_CAMERA_EF, 0, (int16_t)constrain(lrintf(rayDebug.earthRay[0] * 1000.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 1, (int16_t)constrain(lrintf(rayDebug.earthRay[1] * 1000.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 2, (int16_t)constrain(lrintf(rayDebug.earthRay[2] * 1000.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 3, (int16_t)constrain(lrintf(rayDebug.headingEfDeg * 10.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 4, (int16_t)constrain(lrintf(rayDebug.elevationEfDeg * 10.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 5, (int16_t)constrain(lrintf(rayDebug.bodyRay[0] * 1000.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 6, (int16_t)constrain(lrintf(rayDebug.bodyRay[1] * 1000.0f), INT16_MIN, INT16_MAX));
+        DEBUG_SET(DEBUG_CAMERA_EF, 7, (int16_t)constrain(lrintf(rayDebug.bodyRay[2] * 1000.0f), INT16_MIN, INT16_MAX));
     }
 
     osdDrawCameraLockSprite(osdDisplayPort, &displayTarget, true);
