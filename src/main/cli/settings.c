@@ -60,6 +60,7 @@
 #include "flight/gps_rescue.h"
 #include "flight/imu.h"
 #include "flight/mixer.h"
+#include "flight/para_drop.h"
 #include "flight/pid.h"
 #include "flight/position.h"
 #include "flight/rpm_filter.h"
@@ -742,6 +743,11 @@ const clivalue_t valueTable[] = {
     { "baro_i2c_address",           VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, I2C_ADDR7_MAX }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_i2c_address) },
     { "baro_arm_altitude_meters",   VAR_INT16  | MASTER_VALUE, .config.minmax = { -1000, 1000 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_arm_altitude_meters) },
     { PARAM_NAME_BARO_HARDWARE,     VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_BARO_HARDWARE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_hardware) },
+#endif
+#if defined(USE_BARO) && defined(USE_SERVOS)
+    { "para_drop_altitude_meters",  VAR_INT16  | MASTER_VALUE, .config.minmax = { -1000, 1000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, altitudeMeters) },
+    { "para_drop_servo_channel",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, MAX_SUPPORTED_SERVOS }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, servoChannel) },
+    { "para_drop_hold_time_sec",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 10 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, holdTimeSec) },
 #endif
 // PG_RX_CONFIG
     { "mid_rc",                     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1200, 1700 }, PG_RX_CONFIG, offsetof(rxConfig_t, midrc) },

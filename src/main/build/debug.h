@@ -124,6 +124,7 @@ typedef enum {
     DEBUG_MAG_ERROR,
     DEBUG_Z_EKF,
     DEBUG_BARO_ALTHOLD,
+    DEBUG_PARA_DROP,
     DEBUG_COUNT
 } debugType_e;
 

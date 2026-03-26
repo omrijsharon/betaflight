@@ -68,6 +68,7 @@
 
 #include "flight/imu.h"
 #include "flight/mixer.h"
+#include "flight/para_drop.h"
 #include "flight/pid.h"
 #include "flight/position.h"
 #include "flight/rpm_filter.h"
@@ -1254,6 +1255,8 @@ static FAST_CODE void subTaskMotorUpdate(timeUs_t currentTimeUs)
         writeServos();
     }
 #endif
+
+    paraDropUpdate(currentTimeUs);
 
     writeMotors();
 

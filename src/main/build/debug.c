@@ -122,4 +122,5 @@ const char * const debugModeNames[DEBUG_COUNT] = {
     "MAG_ERROR",
     "Z_EKF",
     "BARO_ALTHOLD",
+    "PARA_DROP",
 };

@@ -98,6 +98,7 @@
 #include "flight/imu.h"
 #include "flight/mixer.h"
 #include "flight/gps_rescue.h"
+#include "flight/para_drop.h"
 #include "flight/pid.h"
 #include "flight/pid_init.h"
 #include "flight/position.h"
@@ -712,12 +713,14 @@ void init(void)
 
 #ifdef USE_SERVOS
     servosInit();
-    if (isMixerUsingServos()) {
+    if (isMixerUsingServos() || paraDropRequiresServoOutput()) {
         //pwm_params.useChannelForwarding = featureIsEnabled(FEATURE_CHANNEL_FORWARDING);
         servoDevInit(&servoConfig()->dev);
     }
     servosFilterInit();
 #endif
+
+    paraDropInit();
 
 #ifdef USE_PINIO
     pinioInit(pinioConfig());
