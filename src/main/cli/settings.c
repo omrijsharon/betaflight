@@ -745,9 +745,9 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_BARO_HARDWARE,     VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_BARO_HARDWARE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_hardware) },
 #endif
 #if defined(USE_BARO) && defined(USE_SERVOS)
-    { "para_drop_altitude_meters",  VAR_INT16  | MASTER_VALUE, .config.minmax = { -1000, 1000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, altitudeMeters) },
+    { "para_drop_asl_threshold_meters", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, aslThresholdMeters) },
     { "para_drop_servo_channel",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, MAX_SUPPORTED_SERVOS }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, servoChannel) },
-    { "para_drop_hold_time_sec",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 10 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, holdTimeSec) },
+    { "para_drop_hold_time_ms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 25, 1000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, holdTimeMs) },
 #endif
 // PG_RX_CONFIG
     { "mid_rc",                     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1200, 1700 }, PG_RX_CONFIG, offsetof(rxConfig_t, midrc) },

@@ -73,6 +73,8 @@ void baroSetGroundLevel(void);
 uint32_t baroUpdate(timeUs_t currentTimeUs);
 bool isBaroReady(void);
 float getBaroAltitude(void);
+float getBaroAltitudeAsl(void);
+float getBaroGroundAltitude(void);
 bool isBaroAltitudeCheck(void);
 void zeroAltitude(void);
 void setIsFirstArmCall(bool value);

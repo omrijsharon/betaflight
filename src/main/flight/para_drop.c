@@ -36,26 +36,23 @@
 PG_REGISTER_WITH_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig, PG_PARA_DROP_CONFIG, 0);
 
 PG_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig,
-    .altitudeMeters = 0,
+    .aslThresholdMeters = 0,
     .servoChannel = 0,
-    .holdTimeSec = 1,
+    .holdTimeMs = 25,
 );
 
 typedef struct paraDropState_s {
-    bool referenceLatched;
     bool triggered;
     bool holdActive;
-    float referenceAltitudeMeters;
     timeUs_t holdStartTimeUs;
 } paraDropState_t;
 
 static paraDropState_t paraDropState;
 
 enum {
-    PARA_DROP_DEBUG_STATUS_BARO_READY        = (1 << 0),
-    PARA_DROP_DEBUG_STATUS_REFERENCE_LATCHED = (1 << 1),
-    PARA_DROP_DEBUG_STATUS_HOLD_ACTIVE       = (1 << 2),
-    PARA_DROP_DEBUG_STATUS_TRIGGERED         = (1 << 3),
+    PARA_DROP_DEBUG_STATUS_BARO_READY  = (1 << 0),
+    PARA_DROP_DEBUG_STATUS_HOLD_ACTIVE = (1 << 1),
+    PARA_DROP_DEBUG_STATUS_TRIGGERED   = (1 << 2),
 };
 
 static bool paraDropHasValidServoChannel(void)
@@ -65,7 +62,7 @@ static bool paraDropHasValidServoChannel(void)
 
 bool paraDropIsEnabled(void)
 {
-    return paraDropConfig()->altitudeMeters != 0 && paraDropHasValidServoChannel();
+    return paraDropConfig()->aslThresholdMeters != 0 && paraDropHasValidServoChannel();
 }
 
 bool paraDropRequiresServoOutput(void)
@@ -88,19 +85,29 @@ static uint8_t paraDropServoIndex(void)
     return paraDropConfig()->servoChannel - 1U;
 }
 
+static float paraDropCurrentAltitudeAslMeters(void)
+{
+    return getBaroAltitudeAsl() / 100.0f;
+}
+
 static float paraDropCurrentAltitudeMeters(void)
 {
-    return baro.altitude / 100.0f;
+    return getBaroAltitude() / 100.0f;
+}
+
+static float paraDropCurrentGroundAltitudeMeters(void)
+{
+    return getBaroGroundAltitude() / 100.0f;
 }
 
 static float paraDropThresholdMeters(void)
 {
-    return paraDropConfig()->altitudeMeters;
+    return paraDropConfig()->aslThresholdMeters;
 }
 
 static timeUs_t paraDropHoldTimeUs(void)
 {
-    return (timeUs_t)paraDropConfig()->holdTimeSec * 1000000;
+    return (timeUs_t)paraDropConfig()->holdTimeMs * 1000;
 }
 
 static int16_t paraDropClampToDebug16(int32_t value)
@@ -121,15 +128,9 @@ static int16_t paraDropClampTimeMsToDebug16(timeDelta_t valueUs)
     return paraDropClampToDebug16(valueUs / 1000);
 }
 
-static bool paraDropShouldTrigger(float relativeAltitudeMeters)
+static bool paraDropShouldTrigger(float currentAltitudeAslMeters)
 {
-    const float thresholdMeters = paraDropThresholdMeters();
-
-    if (thresholdMeters >= 0.0f) {
-        return relativeAltitudeMeters >= thresholdMeters;
-    }
-
-    return relativeAltitudeMeters <= thresholdMeters;
+    return currentAltitudeAslMeters <= paraDropThresholdMeters();
 }
 
 static void paraDropWriteOutput(uint16_t pwmValue)
@@ -141,15 +142,12 @@ static void paraDropWriteOutput(uint16_t pwmValue)
     pwmWriteServo(paraDropServoIndex(), pwmValue);
 }
 
-static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float relativeAltitudeMeters, float currentAltitudeMeters, bool baroReady)
+static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float currentAltitudeAslMeters, float currentAltitudeMeters, float groundAltitudeMeters, bool baroReady)
 {
     uint8_t status = 0;
 
     if (baroReady) {
         status |= PARA_DROP_DEBUG_STATUS_BARO_READY;
-    }
-    if (paraDropState.referenceLatched) {
-        status |= PARA_DROP_DEBUG_STATUS_REFERENCE_LATCHED;
     }
     if (paraDropState.holdActive) {
         status |= PARA_DROP_DEBUG_STATUS_HOLD_ACTIVE;
@@ -159,44 +157,40 @@ static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float
     }
 
     DEBUG_SET(DEBUG_PARA_DROP, 0, pwmValue);
-    DEBUG_SET(DEBUG_PARA_DROP, 1, paraDropClampToDebug16(lrintf(relativeAltitudeMeters)));
+    DEBUG_SET(DEBUG_PARA_DROP, 1, paraDropClampToDebug16(lrintf(currentAltitudeAslMeters)));
     DEBUG_SET(DEBUG_PARA_DROP, 2, paraDropClampToDebug16(lrintf(paraDropThresholdMeters())));
     DEBUG_SET(DEBUG_PARA_DROP, 3, paraDropState.holdActive ? paraDropClampTimeMsToDebug16(cmpTimeUs(currentTimeUs, paraDropState.holdStartTimeUs)) : 0);
     DEBUG_SET(DEBUG_PARA_DROP, 4, paraDropClampTimeMsToDebug16((timeDelta_t)paraDropHoldTimeUs()));
     DEBUG_SET(DEBUG_PARA_DROP, 5, status);
-    DEBUG_SET(DEBUG_PARA_DROP, 6, paraDropClampToDebug16(lrintf(paraDropState.referenceAltitudeMeters)));
-    DEBUG_SET(DEBUG_PARA_DROP, 7, paraDropClampToDebug16(lrintf(currentAltitudeMeters)));
+    DEBUG_SET(DEBUG_PARA_DROP, 6, paraDropClampToDebug16(lrintf(currentAltitudeMeters)));
+    DEBUG_SET(DEBUG_PARA_DROP, 7, paraDropClampToDebug16(lrintf(groundAltitudeMeters)));
 }
 
 void paraDropUpdate(timeUs_t currentTimeUs)
 {
+    float currentAltitudeAslMeters = 0.0f;
     float currentAltitudeMeters = 0.0f;
-    float relativeAltitudeMeters = 0.0f;
+    float groundAltitudeMeters = 0.0f;
     uint16_t outputPwm = PWM_RANGE_MIN;
     const bool baroReady = isBaroReady();
 
     if (!paraDropIsEnabled()) {
-        paraDropUpdateDebug(currentTimeUs, outputPwm, relativeAltitudeMeters, currentAltitudeMeters, baroReady);
+        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady);
         return;
     }
 
     if (!baroReady) {
         paraDropWriteOutput(outputPwm);
-        paraDropUpdateDebug(currentTimeUs, outputPwm, relativeAltitudeMeters, currentAltitudeMeters, baroReady);
+        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady);
         return;
     }
 
+    currentAltitudeAslMeters = paraDropCurrentAltitudeAslMeters();
     currentAltitudeMeters = paraDropCurrentAltitudeMeters();
-
-    if (!paraDropState.referenceLatched) {
-        paraDropState.referenceAltitudeMeters = currentAltitudeMeters;
-        paraDropState.referenceLatched = true;
-    }
-
-    relativeAltitudeMeters = currentAltitudeMeters - paraDropState.referenceAltitudeMeters;
+    groundAltitudeMeters = paraDropCurrentGroundAltitudeMeters();
 
     if (!paraDropState.triggered) {
-        if (!paraDropShouldTrigger(relativeAltitudeMeters)) {
+        if (!paraDropShouldTrigger(currentAltitudeAslMeters)) {
             paraDropState.holdActive = false;
         } else if (!paraDropState.holdActive) {
             paraDropState.holdActive = true;
@@ -209,7 +203,7 @@ void paraDropUpdate(timeUs_t currentTimeUs)
 
     outputPwm = paraDropState.triggered ? PWM_RANGE_MAX : PWM_RANGE_MIN;
     paraDropWriteOutput(outputPwm);
-    paraDropUpdateDebug(currentTimeUs, outputPwm, relativeAltitudeMeters, currentAltitudeMeters, baroReady);
+    paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady);
 }
 
 #else
@@ -219,9 +213,9 @@ void paraDropUpdate(timeUs_t currentTimeUs)
 PG_REGISTER_WITH_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig, PG_PARA_DROP_CONFIG, 0);
 
 PG_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig,
-    .altitudeMeters = 0,
+    .aslThresholdMeters = 0,
     .servoChannel = 0,
-    .holdTimeSec = 1,
+    .holdTimeMs = 25,
 );
 
 void paraDropInit(void)

@@ -7,9 +7,9 @@
 #include "pg/pg.h"
 
 typedef struct paraDropConfig_s {
-    int16_t altitudeMeters;
+    uint16_t aslThresholdMeters;
     uint8_t servoChannel;
-    uint8_t holdTimeSec;
+    uint16_t holdTimeMs;
 } paraDropConfig_t;
 
 PG_DECLARE(paraDropConfig_t, paraDropConfig);

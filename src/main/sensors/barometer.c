@@ -627,6 +627,16 @@ float getBaroAltitude(void)
     return baro.altitude;
 }
 
+float getBaroAltitudeAsl(void)
+{
+    return baro.altitude + baroGroundAltitude;
+}
+
+float getBaroGroundAltitude(void)
+{
+    return baroGroundAltitude;
+}
+
 static void performBaroCalibrationCycle(const float altitude)
 {
     baroGroundAltitude += altitude;
