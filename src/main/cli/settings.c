@@ -748,6 +748,8 @@ const clivalue_t valueTable[] = {
     { "para_drop_asl_threshold_meters", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, aslThresholdMeters) },
     { "para_drop_servo_channel",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, MAX_SUPPORTED_SERVOS }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, servoChannel) },
     { "para_drop_hold_time_ms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 25, 1000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, holdTimeMs) },
+    { "para_drop_indicator_pinio",  VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, PINIO_COUNT }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, indicatorPinio) },
+    { "para_drop_indicator_blink_hz", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 20 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, indicatorBlinkHz) },
 #endif
 // PG_RX_CONFIG
     { "mid_rc",                     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1200, 1700 }, PG_RX_CONFIG, offsetof(rxConfig_t, midrc) },

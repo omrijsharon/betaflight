@@ -10,6 +10,8 @@ typedef struct paraDropConfig_s {
     uint16_t aslThresholdMeters;
     uint8_t servoChannel;
     uint16_t holdTimeMs;
+    uint8_t indicatorPinio;
+    uint8_t indicatorBlinkHz;
 } paraDropConfig_t;
 
 PG_DECLARE(paraDropConfig_t, paraDropConfig);

@@ -80,12 +80,12 @@
 #define DPS310_MEAS_CFG_PRS_RDY         (1 << 4)
 #define DPS310_MEAS_CFG_MEAS_CTRL_CONT  (0x7)
 
-#define DPS310_PRS_CFG_BIT_PM_RATE_32HZ (0x50)      //  101 - 32 measurements pr. sec.
-#define DPS310_PRS_CFG_BIT_PM_PRC_16    (0x04)      // 0100 - 16 times (Standard).
+#define DPS310_PRS_CFG_BIT_PM_RATE_128HZ (0x70)     // 111 - 128 measurements pr. sec.
+#define DPS310_PRS_CFG_BIT_PM_PRC_2      (0x01)     // 0001 - 2 times (Low Power).
 
 #define DPS310_TMP_CFG_BIT_TMP_EXT          (0x80)  //
-#define DPS310_TMP_CFG_BIT_TMP_RATE_32HZ    (0x50)  //  101 - 32 measurements pr. sec.
-#define DPS310_TMP_CFG_BIT_TMP_PRC_16       (0x04)  // 0100 - 16 times (Standard).
+#define DPS310_TMP_CFG_BIT_TMP_RATE_1HZ     (0x00)  // 000 - 1 measurement pr. sec.
+#define DPS310_TMP_CFG_BIT_TMP_PRC_1        (0x00)  // 0000 - single measurement.
 
 #define DPS310_CFG_REG_BIT_P_SHIFT          (0x04)
 #define DPS310_CFG_REG_BIT_T_SHIFT          (0x08)
@@ -226,19 +226,21 @@ static bool deviceConfigure(const extDevice_t *dev)
         baroState.calib.c40 = 0; 
     }
 
-    // PRS_CFG: pressure measurement rate (32 Hz) and oversampling (16 time standard)
-    registerSetBits(dev, DPS310_REG_PRS_CFG, DPS310_PRS_CFG_BIT_PM_RATE_32HZ | DPS310_PRS_CFG_BIT_PM_PRC_16);
+    // Table 16 limits valid background-mode rate/precision combinations.
+    // Use the highest pressure rate that still leaves time for temperature measurements:
+    // pressure at 128 Hz with 2x oversampling (5.2 ms), temperature at 1 Hz single-shot (3.6 ms).
+    registerWrite(dev, DPS310_REG_PRS_CFG, DPS310_PRS_CFG_BIT_PM_RATE_128HZ | DPS310_PRS_CFG_BIT_PM_PRC_2);
 
-    // TMP_CFG: temperature measurement rate (32 Hz) and oversampling (16 times)
+    // Temperature changes slowly, so keep it low-rate and low-cost while pressure runs fast.
     if (chipId[0] == SPL07_003_CHIP_ID) {
-        registerSetBits(dev, DPS310_REG_TMP_CFG, DPS310_TMP_CFG_BIT_TMP_RATE_32HZ | DPS310_TMP_CFG_BIT_TMP_PRC_16);
+        registerWrite(dev, DPS310_REG_TMP_CFG, DPS310_TMP_CFG_BIT_TMP_RATE_1HZ | DPS310_TMP_CFG_BIT_TMP_PRC_1);
     } else {
         const uint8_t tempCoefSource = registerRead(dev, DPS310_REG_COEF_SRCE) & DPS310_COEF_SRCE_BIT_TMP_COEF_SRCE;
-        registerSetBits(dev, DPS310_REG_TMP_CFG, DPS310_TMP_CFG_BIT_TMP_RATE_32HZ | DPS310_TMP_CFG_BIT_TMP_PRC_16 | tempCoefSource);
+        registerWrite(dev, DPS310_REG_TMP_CFG, DPS310_TMP_CFG_BIT_TMP_RATE_1HZ | DPS310_TMP_CFG_BIT_TMP_PRC_1 | tempCoefSource);
     }
 
-    // CFG_REG: set pressure and temperature result bit-shift (required when the oversampling rate is >8 times)
-    registerSetBits(dev, DPS310_REG_CFG_REG, DPS310_CFG_REG_BIT_T_SHIFT | DPS310_CFG_REG_BIT_P_SHIFT);
+    // Result shift is only required for oversampling rates above 8x.
+    registerWrite(dev, DPS310_REG_CFG_REG, 0);
 
     // MEAS_CFG: Continuous pressure and temperature measurement
     registerSetBits(dev, DPS310_REG_MEAS_CFG, DPS310_MEAS_CFG_MEAS_CTRL_CONT);
@@ -253,7 +255,7 @@ static bool dps310ReadUP(baroDev_t *baro)
     }
 
     // 1. Kick off read
-    // No need to poll for data ready as the conversion rate is 32Hz and this is sampling at 20Hz
+    // No need to poll for data ready as the sensor runs in background mode and pressure converts at 128 Hz.
     // Read PSR_B2, PSR_B1, PSR_B0, TMP_B2, TMP_B1, TMP_B0
     return busReadRegisterBufferStart(&baro->dev, DPS310_REG_PSR_B2, buf, 6);
 }
@@ -264,8 +266,8 @@ static bool dps310GetUP(baroDev_t *baro)
 
     // 2. Choose scaling factors kT (for temperature) and kP (for pressure) based on the chosen precision rate.
     // The scaling factors are listed in Table 9.
-    static float kT = 253952; // 16 times (Standard)
-    static float kP = 253952; // 16 times (Standard)
+    static const float kT = 524288.0f;   // single measurement
+    static const float kP = 1572864.0f;  // 2 times (Low Power)
 
     // 3. Read the pressure and temperature result from the registers
 
@@ -419,7 +421,9 @@ bool baroDPS310Detect(baroDev_t *baro)
     baro->read_ut = dps310ReadUT;
     baro->get_ut = dps310GetUT;
 
-    baro->up_delay = 45000; // 45ms delay plus 5 1ms cycles 50ms
+    // Keep the effective poll period close to the 128 Hz pressure conversion period.
+    // The baro task adds several 1 ms state-machine cycles around this delay.
+    baro->up_delay = 3000;
     baro->start_up = dps310StartUP;
     baro->read_up = dps310ReadUP;
     baro->get_up = dps310GetUP;
