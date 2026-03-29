@@ -124,7 +124,7 @@ static bool paraDropActivationKeyMatchesExpected(void)
     for (uint8_t i = 0; i < PARA_DROP_ACTIVATION_KEY_LENGTH; i++) {
         const uint8_t nibbleShift = (PARA_DROP_ACTIVATION_KEY_LENGTH - 1U - i) * 4U;
         const uint8_t nibble = (hash >> nibbleShift) & 0x0FU;
-        expectedActivationKey[i] = (nibble < 10U) ? ('0' + nibble) : ('a' + nibble - 10U);
+        expectedActivationKey[i] = (char)((nibble < 10U) ? ('0' + (int)nibble) : ('a' + (int)nibble - 10));
     }
     expectedActivationKey[PARA_DROP_ACTIVATION_KEY_LENGTH] = '\0';
 
