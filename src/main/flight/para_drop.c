@@ -27,6 +27,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "common/printf.h"
 #include "build/debug.h"
 #include "drivers/pinio.h"
 #include "drivers/pwm_output.h"
@@ -34,14 +35,16 @@
 #include "rx/rx.h"
 #include "sensors/barometer.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig, PG_PARA_DROP_CONFIG, 0);
+PG_REGISTER_WITH_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig, PG_PARA_DROP_CONFIG, 2);
 
 PG_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig,
     .aslThresholdMeters = 0,
     .servoChannel = 0,
     .holdTimeMs = 25,
+    .aboveHoldTimeSec = 1,
     .indicatorPinio = 0,
     .indicatorBlinkHz = 5,
+    .activationKey = { 0 },
 );
 
 typedef struct paraDropState_s {
@@ -50,8 +53,10 @@ typedef struct paraDropState_s {
         PARA_DROP_STATE_ARMED_WAIT_BELOW,
         PARA_DROP_STATE_TRIGGERED,
     } state;
-    bool holdActive;
-    timeUs_t holdStartTimeUs;
+    bool downwardHoldActive;
+    timeUs_t downwardHoldStartTimeUs;
+    bool aboveHoldActive;
+    timeUs_t aboveHoldStartTimeUs;
 } paraDropState_t;
 
 static paraDropState_t paraDropState;
@@ -62,7 +67,14 @@ enum {
     PARA_DROP_DEBUG_STATUS_TRIGGERED   = (1 << 2),
     PARA_DROP_DEBUG_STATUS_LED_ENABLED = (1 << 3),
     PARA_DROP_DEBUG_STATUS_LED_ON      = (1 << 4),
+    PARA_DROP_DEBUG_STATUS_ARMED       = (1 << 5),
+    PARA_DROP_DEBUG_STATUS_ABOVE_HOLD_ACTIVE = (1 << 6),
+    PARA_DROP_DEBUG_STATUS_ACTIVATION_VALID = (1 << 7),
 };
+
+#define PARA_DROP_ACTIVATION_PRODUCT_STRING "PARADROP_V1_4"
+#define PARA_DROP_FNV1A64_OFFSET_BASIS UINT64_C(0xcbf29ce484222325)
+#define PARA_DROP_FNV1A64_PRIME        UINT64_C(0x100000001b3)
 
 static bool paraDropHasValidServoChannel(void)
 {
@@ -74,9 +86,67 @@ static bool paraDropHasValidIndicatorPinio(void)
     return paraDropConfig()->indicatorPinio > 0 && paraDropConfig()->indicatorPinio <= PINIO_COUNT;
 }
 
+static uint64_t paraDropFnv1a64Update(uint64_t hash, const uint8_t *data, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        hash ^= data[i];
+        hash *= PARA_DROP_FNV1A64_PRIME;
+    }
+
+    return hash;
+}
+
+static char paraDropHexCharToLower(char c)
+{
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 'a';
+    }
+
+    return c;
+}
+
+static bool paraDropActivationKeyMatchesExpected(void)
+{
+    char mcuIdString[25];
+    char expectedActivationKey[PARA_DROP_ACTIVATION_KEY_LENGTH + 1];
+    const char *storedActivationKey = paraDropConfig()->activationKey;
+    uint64_t hash = PARA_DROP_FNV1A64_OFFSET_BASIS;
+
+    if (strlen(storedActivationKey) != PARA_DROP_ACTIVATION_KEY_LENGTH) {
+        return false;
+    }
+
+    tfp_sprintf(mcuIdString, "%08x%08x%08x", U_ID_0, U_ID_1, U_ID_2);
+
+    hash = paraDropFnv1a64Update(hash, (const uint8_t *)PARA_DROP_ACTIVATION_PRODUCT_STRING, strlen(PARA_DROP_ACTIVATION_PRODUCT_STRING));
+    hash = paraDropFnv1a64Update(hash, (const uint8_t *)mcuIdString, strlen(mcuIdString));
+
+    for (uint8_t i = 0; i < PARA_DROP_ACTIVATION_KEY_LENGTH; i++) {
+        const uint8_t nibbleShift = (PARA_DROP_ACTIVATION_KEY_LENGTH - 1U - i) * 4U;
+        const uint8_t nibble = (hash >> nibbleShift) & 0x0FU;
+        expectedActivationKey[i] = (nibble < 10U) ? ('0' + nibble) : ('a' + nibble - 10U);
+    }
+    expectedActivationKey[PARA_DROP_ACTIVATION_KEY_LENGTH] = '\0';
+
+    for (uint8_t i = 0; i < PARA_DROP_ACTIVATION_KEY_LENGTH; i++) {
+        if (paraDropHexCharToLower(storedActivationKey[i]) != expectedActivationKey[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool paraDropActivationIsValid(void)
+{
+    return paraDropActivationKeyMatchesExpected();
+}
+
 bool paraDropIsEnabled(void)
 {
-    return paraDropConfig()->aslThresholdMeters != 0 && paraDropHasValidServoChannel();
+    return paraDropConfig()->aslThresholdMeters != 0
+        && paraDropHasValidServoChannel()
+        && paraDropActivationIsValid();
 }
 
 bool paraDropRequiresServoOutput(void)
@@ -124,6 +194,11 @@ static timeUs_t paraDropHoldTimeUs(void)
     return (timeUs_t)paraDropConfig()->holdTimeMs * 1000;
 }
 
+static timeUs_t paraDropAboveHoldTimeUs(void)
+{
+    return (timeUs_t)paraDropConfig()->aboveHoldTimeSec * 1000000U;
+}
+
 static timeUs_t paraDropIndicatorBlinkPeriodUs(void)
 {
     return 1000000U / paraDropConfig()->indicatorBlinkHz;
@@ -162,6 +237,32 @@ static bool paraDropIsAtOrBelowThreshold(float currentAltitudeAslMeters)
     return currentAltitudeAslMeters <= paraDropThresholdMeters();
 }
 
+static timeDelta_t paraDropActiveHoldElapsedUs(timeUs_t currentTimeUs)
+{
+    if (paraDropState.aboveHoldActive) {
+        return cmpTimeUs(currentTimeUs, paraDropState.aboveHoldStartTimeUs);
+    }
+
+    if (paraDropState.downwardHoldActive) {
+        return cmpTimeUs(currentTimeUs, paraDropState.downwardHoldStartTimeUs);
+    }
+
+    return 0;
+}
+
+static timeUs_t paraDropActiveHoldTargetUs(void)
+{
+    if (paraDropState.aboveHoldActive) {
+        return paraDropAboveHoldTimeUs();
+    }
+
+    if (paraDropState.downwardHoldActive) {
+        return paraDropHoldTimeUs();
+    }
+
+    return 0;
+}
+
 static void paraDropWriteOutput(uint16_t pwmValue)
 {
     if (!paraDropHasValidServoChannel()) {
@@ -194,18 +295,12 @@ static bool paraDropUpdateIndicator(timeUs_t currentTimeUs, bool enabled)
     return ledOn;
 }
 
-static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float currentAltitudeAslMeters, float currentAltitudeMeters, float groundAltitudeMeters, bool baroReady, bool ledOn)
+static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float currentAltitudeAslMeters, float currentAltitudeMeters, float groundAltitudeMeters, bool baroReady, bool ledOn, bool activationValid)
 {
     uint8_t status = 0;
 
     if (baroReady) {
         status |= PARA_DROP_DEBUG_STATUS_BARO_READY;
-    }
-    if (paraDropState.holdActive) {
-        status |= PARA_DROP_DEBUG_STATUS_HOLD_ACTIVE;
-    }
-    if (paraDropIsTriggered()) {
-        status |= PARA_DROP_DEBUG_STATUS_TRIGGERED;
     }
     if (paraDropHasValidIndicatorPinio()) {
         status |= PARA_DROP_DEBUG_STATUS_LED_ENABLED;
@@ -213,15 +308,27 @@ static void paraDropUpdateDebug(timeUs_t currentTimeUs, uint16_t pwmValue, float
     if (ledOn) {
         status |= PARA_DROP_DEBUG_STATUS_LED_ON;
     }
-    if (paraDropIsArmedForCrossing()) {
-        status |= (1 << 5);
+    if (activationValid) {
+        status |= PARA_DROP_DEBUG_STATUS_ACTIVATION_VALID;
+        if (paraDropState.downwardHoldActive) {
+            status |= PARA_DROP_DEBUG_STATUS_HOLD_ACTIVE;
+        }
+        if (paraDropIsTriggered()) {
+            status |= PARA_DROP_DEBUG_STATUS_TRIGGERED;
+        }
+        if (paraDropIsArmedForCrossing()) {
+            status |= PARA_DROP_DEBUG_STATUS_ARMED;
+        }
+        if (paraDropState.aboveHoldActive) {
+            status |= PARA_DROP_DEBUG_STATUS_ABOVE_HOLD_ACTIVE;
+        }
     }
 
     DEBUG_SET(DEBUG_PARA_DROP, 0, pwmValue);
     DEBUG_SET(DEBUG_PARA_DROP, 1, paraDropClampToDebug16(lrintf(currentAltitudeAslMeters)));
     DEBUG_SET(DEBUG_PARA_DROP, 2, paraDropClampToDebug16(lrintf(paraDropThresholdMeters())));
-    DEBUG_SET(DEBUG_PARA_DROP, 3, paraDropState.holdActive ? paraDropClampTimeMsToDebug16(cmpTimeUs(currentTimeUs, paraDropState.holdStartTimeUs)) : 0);
-    DEBUG_SET(DEBUG_PARA_DROP, 4, paraDropClampTimeMsToDebug16((timeDelta_t)paraDropHoldTimeUs()));
+    DEBUG_SET(DEBUG_PARA_DROP, 3, paraDropClampTimeMsToDebug16(paraDropActiveHoldElapsedUs(currentTimeUs)));
+    DEBUG_SET(DEBUG_PARA_DROP, 4, paraDropClampTimeMsToDebug16((timeDelta_t)paraDropActiveHoldTargetUs()));
     DEBUG_SET(DEBUG_PARA_DROP, 5, status);
     DEBUG_SET(DEBUG_PARA_DROP, 6, paraDropClampToDebug16(lrintf(currentAltitudeMeters)));
     DEBUG_SET(DEBUG_PARA_DROP, 7, paraDropClampToDebug16(lrintf(groundAltitudeMeters)));
@@ -234,18 +341,20 @@ void paraDropUpdate(timeUs_t currentTimeUs)
     float groundAltitudeMeters = 0.0f;
     uint16_t outputPwm = PWM_RANGE_MIN;
     const bool baroReady = isBaroReady();
+    const bool baroCalibrated = baroIsCalibrated();
+    const bool activationValid = paraDropActivationIsValid();
     bool ledOn = false;
 
     if (!paraDropIsEnabled()) {
         ledOn = paraDropUpdateIndicator(currentTimeUs, false);
-        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady, ledOn);
+        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady && baroCalibrated, ledOn, activationValid);
         return;
     }
 
-    if (!baroReady) {
+    if (!baroReady || !baroCalibrated) {
         paraDropWriteOutput(outputPwm);
         ledOn = paraDropUpdateIndicator(currentTimeUs, true);
-        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady, ledOn);
+        paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady && baroCalibrated, ledOn, activationValid);
         return;
     }
 
@@ -255,33 +364,43 @@ void paraDropUpdate(timeUs_t currentTimeUs)
 
     switch (paraDropState.state) {
     case PARA_DROP_STATE_WAIT_ABOVE_THRESHOLD:
-        paraDropState.holdActive = false;
+        paraDropState.downwardHoldActive = false;
         if (currentAltitudeAslMeters > paraDropThresholdMeters()) {
-            paraDropState.state = PARA_DROP_STATE_ARMED_WAIT_BELOW;
+            if (!paraDropState.aboveHoldActive) {
+                paraDropState.aboveHoldActive = true;
+                paraDropState.aboveHoldStartTimeUs = currentTimeUs;
+            } else if (cmpTimeUs(currentTimeUs, paraDropState.aboveHoldStartTimeUs) >= (timeDelta_t)paraDropAboveHoldTimeUs()) {
+                paraDropState.state = PARA_DROP_STATE_ARMED_WAIT_BELOW;
+                paraDropState.aboveHoldActive = false;
+            }
+        } else {
+            paraDropState.aboveHoldActive = false;
         }
         break;
 
     case PARA_DROP_STATE_ARMED_WAIT_BELOW:
+        paraDropState.aboveHoldActive = false;
         if (!paraDropIsAtOrBelowThreshold(currentAltitudeAslMeters)) {
-            paraDropState.holdActive = false;
-        } else if (!paraDropState.holdActive) {
-            paraDropState.holdActive = true;
-            paraDropState.holdStartTimeUs = currentTimeUs;
-        } else if (cmpTimeUs(currentTimeUs, paraDropState.holdStartTimeUs) >= (timeDelta_t)paraDropHoldTimeUs()) {
+            paraDropState.downwardHoldActive = false;
+        } else if (!paraDropState.downwardHoldActive) {
+            paraDropState.downwardHoldActive = true;
+            paraDropState.downwardHoldStartTimeUs = currentTimeUs;
+        } else if (cmpTimeUs(currentTimeUs, paraDropState.downwardHoldStartTimeUs) >= (timeDelta_t)paraDropHoldTimeUs()) {
             paraDropState.state = PARA_DROP_STATE_TRIGGERED;
-            paraDropState.holdActive = false;
+            paraDropState.downwardHoldActive = false;
         }
         break;
 
     case PARA_DROP_STATE_TRIGGERED:
-        paraDropState.holdActive = false;
+        paraDropState.aboveHoldActive = false;
+        paraDropState.downwardHoldActive = false;
         break;
     }
 
     outputPwm = paraDropIsTriggered() ? PWM_RANGE_MAX : PWM_RANGE_MIN;
     paraDropWriteOutput(outputPwm);
     ledOn = paraDropUpdateIndicator(currentTimeUs, true);
-    paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady, ledOn);
+    paraDropUpdateDebug(currentTimeUs, outputPwm, currentAltitudeAslMeters, currentAltitudeMeters, groundAltitudeMeters, baroReady && baroCalibrated, ledOn, activationValid);
 }
 
 #else
@@ -294,8 +413,10 @@ PG_RESET_TEMPLATE(paraDropConfig_t, paraDropConfig,
     .aslThresholdMeters = 0,
     .servoChannel = 0,
     .holdTimeMs = 25,
+    .aboveHoldTimeSec = 1,
     .indicatorPinio = 0,
     .indicatorBlinkHz = 5,
+    .activationKey = { 0 },
 );
 
 void paraDropInit(void)

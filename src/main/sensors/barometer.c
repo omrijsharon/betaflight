@@ -66,7 +66,7 @@
 baro_t baro;                        // barometer access functions
 timeUs_t prevTimeUs;
 
-PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFIG, 3);
+PG_REGISTER_WITH_RESET_FN(barometerConfig_t, barometerConfig, PG_BAROMETER_CONFIG, 5);
 
 #ifndef DEFAULT_BARO_DEVICE
 #define DEFAULT_BARO_DEVICE BARO_DEFAULT
@@ -76,6 +76,8 @@ void pgResetFn_barometerConfig(barometerConfig_t *barometerConfig)
 {
     barometerConfig->baro_hardware = DEFAULT_BARO_DEVICE;
     barometerConfig->baro_arm_altitude_meters = 0;
+    barometerConfig->dps310_pressure_rate_hz = DPS310_PRESSURE_RATE_128HZ;
+    barometerConfig->seaLevelPressureHpa = 1013;
     // For backward compatibility; ceate a valid default value for bus parameters
     //
     // 1. If DEFAULT_BARO_xxx is defined, use it.
@@ -397,7 +399,8 @@ bool isBaroReady(void)
 
 static float pressureToAltitude(const float pressure)
 {
-    return (1.0f - powf(pressure / 101325.0f, 0.190295f)) * 4433000.0f;
+    const float seaLevelPressurePa = barometerConfig()->seaLevelPressureHpa * 100.0f;
+    return (1.0f - powf(pressure / seaLevelPressurePa, 0.190295f)) * 4433000.0f;
 }
 
 

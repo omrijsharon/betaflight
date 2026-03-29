@@ -48,7 +48,15 @@ typedef struct barometerConfig_s {
     ioTag_t baro_eoc_tag;
     ioTag_t baro_xclr_tag;
     int16_t baro_arm_altitude_meters;
+    uint8_t dps310_pressure_rate_hz;
+    uint16_t seaLevelPressureHpa;
 } barometerConfig_t;
+
+typedef enum {
+    DPS310_PRESSURE_RATE_32HZ = 0,
+    DPS310_PRESSURE_RATE_64HZ,
+    DPS310_PRESSURE_RATE_128HZ,
+} dps310PressureRate_e;
 
 PG_DECLARE(barometerConfig_t, barometerConfig);
 

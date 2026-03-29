@@ -44,6 +44,7 @@
 #include "drivers/barometer/barometer.h"
 #include "drivers/barometer/barometer_dps310.h"
 #include "drivers/resource.h"
+#include "sensors/barometer.h"
 
 // 10 MHz max SPI frequency
 #define DPS310_MAX_SPI_CLK_HZ 10000000
@@ -80,8 +81,12 @@
 #define DPS310_MEAS_CFG_PRS_RDY         (1 << 4)
 #define DPS310_MEAS_CFG_MEAS_CTRL_CONT  (0x7)
 
+#define DPS310_PRS_CFG_BIT_PM_RATE_32HZ  (0x50)     // 101 - 32 measurements pr. sec.
+#define DPS310_PRS_CFG_BIT_PM_RATE_64HZ  (0x60)     // 110 - 64 measurements pr. sec.
 #define DPS310_PRS_CFG_BIT_PM_RATE_128HZ (0x70)     // 111 - 128 measurements pr. sec.
 #define DPS310_PRS_CFG_BIT_PM_PRC_2      (0x01)     // 0001 - 2 times (Low Power).
+#define DPS310_PRS_CFG_BIT_PM_PRC_8      (0x03)     // 0011 - 8 times.
+#define DPS310_PRS_CFG_BIT_PM_PRC_16     (0x04)     // 0100 - 16 times.
 
 #define DPS310_TMP_CFG_BIT_TMP_EXT          (0x80)  //
 #define DPS310_TMP_CFG_BIT_TMP_RATE_1HZ     (0x00)  // 000 - 1 measurement pr. sec.
@@ -113,6 +118,49 @@ typedef struct {
 } baroState_t;
 
 static baroState_t  baroState;
+static float dps310PressureScaleFactor = 1572864.0f;
+static timeUs_t dps310PressureUpDelayUs = 3000;
+
+typedef struct {
+    uint8_t prsCfg;
+    uint8_t cfgReg;
+    float pressureScaleFactor;
+    timeUs_t upDelayUs;
+} dps310PressurePreset_t;
+
+static const dps310PressurePreset_t dps310PressurePresets[] = {
+    [DPS310_PRESSURE_RATE_32HZ] = {
+        .prsCfg = DPS310_PRS_CFG_BIT_PM_RATE_32HZ | DPS310_PRS_CFG_BIT_PM_PRC_16,
+        .cfgReg = DPS310_CFG_REG_BIT_P_SHIFT,
+        .pressureScaleFactor = 253952.0f,
+        .upDelayUs = 26000,
+    },
+    [DPS310_PRESSURE_RATE_64HZ] = {
+        .prsCfg = DPS310_PRS_CFG_BIT_PM_RATE_64HZ | DPS310_PRS_CFG_BIT_PM_PRC_8,
+        .cfgReg = 0,
+        .pressureScaleFactor = 7864320.0f,
+        .upDelayUs = 11000,
+    },
+    [DPS310_PRESSURE_RATE_128HZ] = {
+        .prsCfg = DPS310_PRS_CFG_BIT_PM_RATE_128HZ | DPS310_PRS_CFG_BIT_PM_PRC_2,
+        .cfgReg = 0,
+        .pressureScaleFactor = 1572864.0f,
+        .upDelayUs = 3000,
+    },
+};
+
+static const dps310PressurePreset_t *dps310GetPressurePreset(void)
+{
+    switch (barometerConfig()->dps310_pressure_rate_hz) {
+    case DPS310_PRESSURE_RATE_32HZ:
+        return &dps310PressurePresets[DPS310_PRESSURE_RATE_32HZ];
+    case DPS310_PRESSURE_RATE_64HZ:
+        return &dps310PressurePresets[DPS310_PRESSURE_RATE_64HZ];
+    case DPS310_PRESSURE_RATE_128HZ:
+    default:
+        return &dps310PressurePresets[DPS310_PRESSURE_RATE_128HZ];
+    }
+}
 
 #define busReadBuf busReadRegisterBuffer
 #define busWrite   busWriteRegister
@@ -153,6 +201,8 @@ static int32_t getTwosComplement(uint32_t raw, uint8_t length)
 
 static bool deviceConfigure(const extDevice_t *dev)
 {
+    const dps310PressurePreset_t *pressurePreset = dps310GetPressurePreset();
+
     // Trigger a chip reset
     registerSetBits(dev, DPS310_REG_RESET, DPS310_RESET_BIT_SOFT_RST);
 
@@ -227,9 +277,8 @@ static bool deviceConfigure(const extDevice_t *dev)
     }
 
     // Table 16 limits valid background-mode rate/precision combinations.
-    // Use the highest pressure rate that still leaves time for temperature measurements:
-    // pressure at 128 Hz with 2x oversampling (5.2 ms), temperature at 1 Hz single-shot (3.6 ms).
-    registerWrite(dev, DPS310_REG_PRS_CFG, DPS310_PRS_CFG_BIT_PM_RATE_128HZ | DPS310_PRS_CFG_BIT_PM_PRC_2);
+    // The CLI selects one of a few known-good pressure presets; temperature stays low-rate.
+    registerWrite(dev, DPS310_REG_PRS_CFG, pressurePreset->prsCfg);
 
     // Temperature changes slowly, so keep it low-rate and low-cost while pressure runs fast.
     if (chipId[0] == SPL07_003_CHIP_ID) {
@@ -239,8 +288,10 @@ static bool deviceConfigure(const extDevice_t *dev)
         registerWrite(dev, DPS310_REG_TMP_CFG, DPS310_TMP_CFG_BIT_TMP_RATE_1HZ | DPS310_TMP_CFG_BIT_TMP_PRC_1 | tempCoefSource);
     }
 
-    // Result shift is only required for oversampling rates above 8x.
-    registerWrite(dev, DPS310_REG_CFG_REG, 0);
+    registerWrite(dev, DPS310_REG_CFG_REG, pressurePreset->cfgReg);
+
+    dps310PressureScaleFactor = pressurePreset->pressureScaleFactor;
+    dps310PressureUpDelayUs = pressurePreset->upDelayUs;
 
     // MEAS_CFG: Continuous pressure and temperature measurement
     registerSetBits(dev, DPS310_REG_MEAS_CFG, DPS310_MEAS_CFG_MEAS_CTRL_CONT);
@@ -255,7 +306,7 @@ static bool dps310ReadUP(baroDev_t *baro)
     }
 
     // 1. Kick off read
-    // No need to poll for data ready as the sensor runs in background mode and pressure converts at 128 Hz.
+    // No need to poll for data ready as the sensor runs in background mode.
     // Read PSR_B2, PSR_B1, PSR_B0, TMP_B2, TMP_B1, TMP_B0
     return busReadRegisterBufferStart(&baro->dev, DPS310_REG_PSR_B2, buf, 6);
 }
@@ -267,7 +318,6 @@ static bool dps310GetUP(baroDev_t *baro)
     // 2. Choose scaling factors kT (for temperature) and kP (for pressure) based on the chosen precision rate.
     // The scaling factors are listed in Table 9.
     static const float kT = 524288.0f;   // single measurement
-    static const float kP = 1572864.0f;  // 2 times (Low Power)
 
     // 3. Read the pressure and temperature result from the registers
 
@@ -275,7 +325,7 @@ static bool dps310GetUP(baroDev_t *baro)
     const int32_t Traw = getTwosComplement((buf[3] << 16) + (buf[4] << 8) + buf[5], 24);
 
     // 4. Calculate scaled measurement results.
-    const float Praw_sc = Praw / kP;
+    const float Praw_sc = Praw / dps310PressureScaleFactor;
     const float Traw_sc = Traw / kT;
 
     // 5. Calculate compensated measurement results.
@@ -421,9 +471,8 @@ bool baroDPS310Detect(baroDev_t *baro)
     baro->read_ut = dps310ReadUT;
     baro->get_ut = dps310GetUT;
 
-    // Keep the effective poll period close to the 128 Hz pressure conversion period.
-    // The baro task adds several 1 ms state-machine cycles around this delay.
-    baro->up_delay = 3000;
+    // The selected pressure preset chooses a delay that compensates for the baro state-machine overhead.
+    baro->up_delay = dps310PressureUpDelayUs;
     baro->start_up = dps310StartUP;
     baro->read_up = dps310ReadUP;
     baro->get_up = dps310GetUP;

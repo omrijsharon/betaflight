@@ -481,6 +481,10 @@ static const char * const lookupTableOffOnAuto[] = {
     "OFF", "ON", "AUTO"
 };
 
+static const char * const lookupTableDps310PressureRate[] = {
+    "32", "64", "128"
+};
+
 const char* const lookupTableFeedforwardAveraging[] = {
     "OFF", "2_POINT", "3_POINT", "4_POINT"
 };
@@ -566,6 +570,7 @@ const lookupTableEntry_t lookupTables[] = {
     LOOKUP_TABLE_ENTRY(lookupTableAccHardware),
 #ifdef USE_BARO
     LOOKUP_TABLE_ENTRY(lookupTableBaroHardware),
+    LOOKUP_TABLE_ENTRY(lookupTableDps310PressureRate),
 #endif
 #ifdef USE_MAG
     LOOKUP_TABLE_ENTRY(lookupTableMagHardware),
@@ -743,13 +748,17 @@ const clivalue_t valueTable[] = {
     { "baro_i2c_address",           VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, I2C_ADDR7_MAX }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_i2c_address) },
     { "baro_arm_altitude_meters",   VAR_INT16  | MASTER_VALUE, .config.minmax = { -1000, 1000 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_arm_altitude_meters) },
     { PARAM_NAME_BARO_HARDWARE,     VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_BARO_HARDWARE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_hardware) },
+    { "dps310_pressure_rate_hz",    VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_DPS310_PRESSURE_RATE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, dps310_pressure_rate_hz) },
+    { "baro_sea_level_pressure_hpa", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 800, 1200 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, seaLevelPressureHpa) },
 #endif
 #if defined(USE_BARO) && defined(USE_SERVOS)
     { "para_drop_asl_threshold_meters", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, aslThresholdMeters) },
     { "para_drop_servo_channel",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, MAX_SUPPORTED_SERVOS }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, servoChannel) },
     { "para_drop_hold_time_ms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 25, 1000 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, holdTimeMs) },
+    { "para_drop_above_hold_time_sec", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 10 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, aboveHoldTimeSec) },
     { "para_drop_indicator_pinio",  VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, PINIO_COUNT }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, indicatorPinio) },
     { "para_drop_indicator_blink_hz", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 20 }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, indicatorBlinkHz) },
+    { "para_drop_activation_key",   VAR_UINT8  | MASTER_VALUE | MODE_STRING, .config.string = { 0, PARA_DROP_ACTIVATION_KEY_LENGTH, STRING_FLAGS_NONE }, PG_PARA_DROP_CONFIG, offsetof(paraDropConfig_t, activationKey) },
 #endif
 // PG_RX_CONFIG
     { "mid_rc",                     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1200, 1700 }, PG_RX_CONFIG, offsetof(rxConfig_t, midrc) },

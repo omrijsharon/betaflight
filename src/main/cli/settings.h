@@ -59,6 +59,7 @@ typedef enum {
     TABLE_ACC_HARDWARE,
 #ifdef USE_BARO
     TABLE_BARO_HARDWARE,
+    TABLE_DPS310_PRESSURE_RATE,
 #endif
 #ifdef USE_MAG
     TABLE_MAG_HARDWARE,
