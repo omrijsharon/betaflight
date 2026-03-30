@@ -42,12 +42,14 @@ def main() -> int:
     raw_mcu_id = sys.argv[1] if len(sys.argv) > 1 else input("Paste mcu_id: ")
 
     try:
-        key = activation_key_for_mcu_id(raw_mcu_id)
+        normalized_mcu_id = normalize_mcu_id(raw_mcu_id)
+        key = activation_key_for_mcu_id(normalized_mcu_id)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(key)
+    print(f"mcu_id: {normalized_mcu_id}")
+    print(f"set para_drop_activation_key = {key}")
     return 0
 
 
