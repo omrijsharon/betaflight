@@ -218,36 +218,7 @@ static void calculateThrottleAndCurrentMotorEndpoints(timeUs_t currentTimeUs)
             pidResetIterm();
         }
     } else {
-        // In BARO altitude-hold mode, throttle stick is used as a vertical-speed command, not direct motor throttle.
-        // Use a hover PWM as the base and apply altitude hold corrections on top.
-#ifdef USE_BARO_ALTHOLD
-        const bool baroAltHoldActive = (FLIGHT_MODE(BARO_MODE) && ARMING_FLAG(ARMED));
-#else
-        const bool baroAltHoldActive = false;
-#endif
-        const float throttleBase = baroAltHoldActive
-            ? constrainf(positionConfig()->alt_hold_hover_pwm, PWM_RANGE_MIN, PWM_RANGE_MAX)
-            : rcCommand[THROTTLE];
-
-        // Keep legacy throttleAngleCorrection behavior for non-BARO modes, but do not double-compensate in BARO mode.
-        throttle = throttleBase - PWM_RANGE_MIN + throttleAngleCorrection;
-        if (baroAltHoldActive) {
-            // Negate the angle-mode correction and use BARO-mode tilt compensation instead.
-            throttle -= throttleAngleCorrection;
-            throttle += throttleAltitudeCorrection;
-
-            // BARO altitude hold: compensate for reduced vertical thrust when tilted.
-            // Use R[2,2] = cos(tilt) (see getCosTiltAngle()) and assume thrust is ~linear above a "zero thrust" PWM.
-            // Compensate by scaling the (PWM - thrust_zero) component by 1/cos(tilt).
-            // Constrain to avoid runaway near 90 degrees (and intentionally limit compensation above ~60 deg).
-            const float cosTilt = constrainf(fabsf(getCosTiltAngle()), 0.5f, 1.0f);
-            const float pwmAbs = throttle + PWM_RANGE_MIN;
-            const float thrustZero = constrainf(positionConfig()->alt_hold_thrust_zero_pwm, PWM_RANGE_MIN, PWM_RANGE_MAX);
-            const float effective = MAX(0.0f, pwmAbs - thrustZero);
-            const float pwmComp = thrustZero + (effective / cosTilt);
-            throttle = pwmComp - PWM_RANGE_MIN;
-        }
-
+        throttle = rcCommand[THROTTLE] - PWM_RANGE_MIN + throttleAngleCorrection;
         currentThrottleInputRange = PWM_RANGE;
 #ifdef USE_DYN_IDLE
         if (mixerRuntime.dynIdleMinRps > 0.0f) {

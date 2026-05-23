@@ -89,6 +89,7 @@ baro_ms5611_unittest_DEFINES := \
 
 
 blackbox_unittest_SRC :=  \
+		$(USER_DIR)/flight/altitude_estimator.c \
 		$(USER_DIR)/blackbox/blackbox.c \
 		$(USER_DIR)/blackbox/blackbox_encoding.c \
 		$(USER_DIR)/blackbox/blackbox_io.c \
@@ -154,8 +155,12 @@ flight_imu_unittest_SRC := \
 		$(USER_DIR)/common/maths.c \
 		$(USER_DIR)/config/feature.c \
 		$(USER_DIR)/fc/rc_modes.c \
+		$(USER_DIR)/flight/altitude_estimator.c \
 		$(USER_DIR)/flight/position.c \
 		$(USER_DIR)/flight/imu.c
+
+altitude_estimator_unittest_SRC := \
+		$(USER_DIR)/flight/altitude_estimator.c
 
 
 flight_mixer_unittest :=  \

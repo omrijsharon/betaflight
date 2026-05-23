@@ -83,6 +83,7 @@
 #include "fc/runtime_config.h"
 
 #include "flight/failsafe.h"
+#include "flight/altitude_estimator.h"
 #include "flight/gps_rescue.h"
 #include "flight/imu.h"
 #include "flight/mixer.h"
@@ -1334,6 +1335,57 @@ case MSP_NAME:
 #else
         sbufWriteU16(dst, 0);
 #endif
+        break;
+
+    case MSP2_BETAFLIGHT_ALT_EST_CONFIG:
+        {
+            const altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfig();
+            sbufWriteU8(dst, ALTITUDE_ESTIMATOR_VERSION);
+            sbufWriteU16(dst, cfg->alt_est_flags);
+            sbufWriteU16(dst, cfg->alt_est_accel_noise_cms2);
+            sbufWriteU16(dst, cfg->alt_est_accel_bias_noise_cms2);
+            sbufWriteU16(dst, cfg->alt_est_accel_bias_limit_cms2);
+            sbufWriteU16(dst, cfg->alt_est_baro_noise_cm);
+            sbufWriteU16(dst, cfg->alt_est_baro_delay_ms);
+            sbufWriteU16(dst, cfg->alt_est_innov_var_floor_cm2);
+            sbufWriteU16(dst, cfg->alt_est_history_ms);
+            sbufWriteU8(dst, cfg->alt_est_gate_sigma_x10);
+            sbufWriteU16(dst, cfg->alt_est_recovery_start_frames);
+            sbufWriteU16(dst, cfg->alt_est_recovery_r_scale_x10);
+            sbufWriteU8(dst, cfg->alt_est_recovery_decay_tc_frames);
+            sbufWriteU16(dst, cfg->alt_est_step_innov_thresh_cm);
+            sbufWriteU16(dst, cfg->alt_est_step_rate_thresh_cms);
+            sbufWriteU16(dst, cfg->alt_est_step_rate_filter_tau_ms);
+            sbufWriteU8(dst, cfg->alt_est_step_streak_frames);
+            sbufWriteU16(dst, cfg->alt_est_step_offset_alpha_x1000);
+            sbufWriteU16(dst, cfg->alt_est_step_offset_limit_cm);
+            sbufWriteU16(dst, cfg->alt_est_height_rate_lpf_hz_x100);
+        }
+        break;
+
+    case MSP2_BETAFLIGHT_ALT_EST_STATUS:
+        {
+            const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
+            sbufWriteU8(dst, ALTITUDE_ESTIMATOR_VERSION);
+            sbufWriteU32(dst, (uint32_t)status->timeUs);
+            sbufWriteU32(dst, status->flags);
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->altitudeCm));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->velocityCms));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->positionRateCms));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroAltitudeCm));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->accelWorldZCms2));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->accelBiasCms2));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->innovationCm));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->gateCm));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->rEffCm2));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->sCm2));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroOffsetCm));
+            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroAgeMs));
+            sbufWriteU16(dst, (uint16_t)constrain(lrintf(status->configuredDelayMs), 0, UINT16_MAX));
+            sbufWriteU16(dst, status->rejectStreak);
+            sbufWriteU16(dst, status->recoveryFrames);
+            sbufWriteU16(dst, status->stepStreak);
+        }
         break;
 
     case MSP_SONAR_ALTITUDE:
@@ -4158,6 +4210,36 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 
         break;
 #endif
+
+    case MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG:
+        {
+            if (sbufReadU8(src) != ALTITUDE_ESTIMATOR_VERSION) {
+                return MSP_RESULT_ERROR;
+            }
+
+            altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
+            cfg->alt_est_flags = sbufReadU16(src);
+            cfg->alt_est_accel_noise_cms2 = constrain(sbufReadU16(src), 1, 1000);
+            cfg->alt_est_accel_bias_noise_cms2 = constrain(sbufReadU16(src), 0, 1000);
+            cfg->alt_est_accel_bias_limit_cms2 = constrain(sbufReadU16(src), 1, 5000);
+            cfg->alt_est_baro_noise_cm = constrain(sbufReadU16(src), 1, 10000);
+            cfg->alt_est_baro_delay_ms = constrain(sbufReadU16(src), 0, 1000);
+            cfg->alt_est_innov_var_floor_cm2 = constrain(sbufReadU16(src), 1, 100000);
+            cfg->alt_est_history_ms = constrain(sbufReadU16(src), 20, 1000);
+            cfg->alt_est_gate_sigma_x10 = constrain(sbufReadU8(src), 5, 100);
+            cfg->alt_est_recovery_start_frames = constrain(sbufReadU16(src), 1, 1000);
+            cfg->alt_est_recovery_r_scale_x10 = constrain(sbufReadU16(src), 10, 10000);
+            cfg->alt_est_recovery_decay_tc_frames = constrain(sbufReadU8(src), 1, 255);
+            cfg->alt_est_step_innov_thresh_cm = constrain(sbufReadU16(src), 0, 10000);
+            cfg->alt_est_step_rate_thresh_cms = constrain(sbufReadU16(src), 0, 10000);
+            cfg->alt_est_step_rate_filter_tau_ms = constrain(sbufReadU16(src), 0, 5000);
+            cfg->alt_est_step_streak_frames = constrain(sbufReadU8(src), 1, 255);
+            cfg->alt_est_step_offset_alpha_x1000 = constrain(sbufReadU16(src), 0, 1000);
+            cfg->alt_est_step_offset_limit_cm = constrain(sbufReadU16(src), 0, 10000);
+            cfg->alt_est_height_rate_lpf_hz_x100 = constrain(sbufReadU16(src), 5, 5000);
+            altitudeEstimatorUpdateConfig();
+        }
+        break;
 
     case MSP2_SET_TEXT:
         {

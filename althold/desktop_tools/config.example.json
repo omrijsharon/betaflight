@@ -1,0 +1,9 @@
+{
+  "pi_host": "althold-pi",
+  "pi_user": "pi",
+  "pi_app_dir": "/opt/althold",
+  "remote_log_dir": "/opt/althold/logs/pi_sessions",
+  "local_log_dir": "althold/logs/downloaded",
+  "wifi_hotspot_profile": "phone-hotspot",
+  "wifi_home_profile": "home-wifi"
+}

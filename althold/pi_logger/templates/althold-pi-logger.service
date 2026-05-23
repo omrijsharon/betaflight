@@ -1,0 +1,15 @@
+[Unit]
+Description=Betaflight altitude estimator logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/althold
+Environment=ALTHOLD_LOGGER_CONFIG=/opt/althold/pi_logger/config.json
+ExecStart=/opt/althold/venv/bin/python -m althold.pi_logger.app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

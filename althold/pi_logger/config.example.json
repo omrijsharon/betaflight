@@ -1,0 +1,9 @@
+{
+  "mode": "fake",
+  "serial_port": "/dev/ttyAMA0",
+  "baudrate": 115200,
+  "poll_hz": 50,
+  "log_root": "althold/logs/pi_sessions",
+  "site_host": "0.0.0.0",
+  "site_port": 8080
+}

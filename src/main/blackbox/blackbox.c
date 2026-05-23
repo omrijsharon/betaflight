@@ -63,6 +63,7 @@
 #include "fc/runtime_config.h"
 
 #include "flight/failsafe.h"
+#include "flight/altitude_estimator.h"
 #include "flight/mixer.h"
 #include "flight/pid.h"
 #include "flight/rpm_filter.h"
@@ -224,6 +225,20 @@ static const blackboxDeltaFieldDefinition_t blackboxMainFields[] = {
     {"surfaceRaw",   -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(TAG8_8SVB), CONDITION(RANGEFINDER)},
 #endif
     {"rssi",       -1, UNSIGNED, .Ipredict = PREDICT(0),       .Iencode = ENCODING(UNSIGNED_VB), .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(TAG8_8SVB), CONDITION(RSSI)},
+#ifdef USE_BARO
+    {"altEst",     -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altVel",     -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altRate",    -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altAccZ",    -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altBias",    -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altInnov",   -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altGate",    -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altREff",    -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altS",       -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altBaroAge", -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altFlags",   -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+    {"altOffset",  -1, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(PREVIOUS),      .Pencode = ENCODING(SIGNED_VB), CONDITION(BARO)},
+#endif
 
     /* Gyros and accelerometers base their P-predictions on the average of the previous 2 frames to reduce noise impact */
     {"gyroADC",     0, SIGNED,   .Ipredict = PREDICT(0),       .Iencode = ENCODING(SIGNED_VB),   .Ppredict = PREDICT(AVERAGE_2),     .Pencode = ENCODING(SIGNED_VB), CONDITION(GYRO)},
@@ -352,6 +367,20 @@ typedef struct blackboxMainState_s {
     int32_t surfaceRaw;
 #endif
     uint16_t rssi;
+#ifdef USE_BARO
+    int32_t altEst;
+    int32_t altVel;
+    int32_t altRate;
+    int32_t altAccZ;
+    int32_t altBias;
+    int32_t altInnov;
+    int32_t altGate;
+    int32_t altREff;
+    int32_t altS;
+    int32_t altBaroAge;
+    int32_t altFlags;
+    int32_t altOffset;
+#endif
 } blackboxMainState_t;
 
 typedef struct blackboxGpsState_s {
@@ -667,6 +696,23 @@ static void writeIntraframe(void)
         blackboxWriteUnsignedVB(blackboxCurrent->rssi);
     }
 
+#ifdef USE_BARO
+    if (testBlackboxCondition(CONDITION(BARO))) {
+        blackboxWriteSignedVB(blackboxCurrent->altEst);
+        blackboxWriteSignedVB(blackboxCurrent->altVel);
+        blackboxWriteSignedVB(blackboxCurrent->altRate);
+        blackboxWriteSignedVB(blackboxCurrent->altAccZ);
+        blackboxWriteSignedVB(blackboxCurrent->altBias);
+        blackboxWriteSignedVB(blackboxCurrent->altInnov);
+        blackboxWriteSignedVB(blackboxCurrent->altGate);
+        blackboxWriteSignedVB(blackboxCurrent->altREff);
+        blackboxWriteSignedVB(blackboxCurrent->altS);
+        blackboxWriteSignedVB(blackboxCurrent->altBaroAge);
+        blackboxWriteSignedVB(blackboxCurrent->altFlags);
+        blackboxWriteSignedVB(blackboxCurrent->altOffset);
+    }
+#endif
+
     if (testBlackboxCondition(CONDITION(GYRO))) {
         blackboxWriteSigned16VBArray(blackboxCurrent->gyroADC, XYZ_AXIS_COUNT);
     }
@@ -831,6 +877,23 @@ static void writeInterframe(void)
     }
 
     blackboxWriteTag8_8SVB(deltas, optionalFieldCount);
+
+#ifdef USE_BARO
+    if (testBlackboxCondition(CONDITION(BARO))) {
+        blackboxWriteSignedVB(blackboxCurrent->altEst - blackboxLast->altEst);
+        blackboxWriteSignedVB(blackboxCurrent->altVel - blackboxLast->altVel);
+        blackboxWriteSignedVB(blackboxCurrent->altRate - blackboxLast->altRate);
+        blackboxWriteSignedVB(blackboxCurrent->altAccZ - blackboxLast->altAccZ);
+        blackboxWriteSignedVB(blackboxCurrent->altBias - blackboxLast->altBias);
+        blackboxWriteSignedVB(blackboxCurrent->altInnov - blackboxLast->altInnov);
+        blackboxWriteSignedVB(blackboxCurrent->altGate - blackboxLast->altGate);
+        blackboxWriteSignedVB(blackboxCurrent->altREff - blackboxLast->altREff);
+        blackboxWriteSignedVB(blackboxCurrent->altS - blackboxLast->altS);
+        blackboxWriteSignedVB(blackboxCurrent->altBaroAge - blackboxLast->altBaroAge);
+        blackboxWriteSignedVB(blackboxCurrent->altFlags - blackboxLast->altFlags);
+        blackboxWriteSignedVB(blackboxCurrent->altOffset - blackboxLast->altOffset);
+    }
+#endif
 
     //Since gyros, accs and motors are noisy, base their predictions on the average of the history:
     if (testBlackboxCondition(CONDITION(GYRO))) {
@@ -1176,6 +1239,19 @@ static void loadMainState(timeUs_t currentTimeUs)
 
 #ifdef USE_BARO
     blackboxCurrent->baroAlt = baro.altitude;
+    const altitudeEstimatorStatus_t *altStatus = altitudeEstimatorGetStatus();
+    blackboxCurrent->altEst = lrintf(altStatus->altitudeCm);
+    blackboxCurrent->altVel = lrintf(altStatus->velocityCms);
+    blackboxCurrent->altRate = lrintf(altStatus->positionRateCms);
+    blackboxCurrent->altAccZ = lrintf(altStatus->accelWorldZCms2);
+    blackboxCurrent->altBias = lrintf(altStatus->accelBiasCms2);
+    blackboxCurrent->altInnov = lrintf(altStatus->innovationCm);
+    blackboxCurrent->altGate = lrintf(altStatus->gateCm);
+    blackboxCurrent->altREff = lrintf(altStatus->rEffCm2);
+    blackboxCurrent->altS = lrintf(altStatus->sCm2);
+    blackboxCurrent->altBaroAge = lrintf(altStatus->baroAgeMs);
+    blackboxCurrent->altFlags = altStatus->flags;
+    blackboxCurrent->altOffset = lrintf(altStatus->baroOffsetCm);
 #endif
 
 #ifdef USE_RANGEFINDER
@@ -1554,6 +1630,25 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_R_CENTI, "%d",            positionConfig()->ekf_r_centi);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_GATE_SIGMA_X10, "%d",     positionConfig()->ekf_gate_sigma_x10);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_EKF_ENABLE_ADAPT_R, "%d",     positionConfig()->ekf_enable_adapt_r);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_FLAGS, "%d",                   altitudeEstimatorConfig()->alt_est_flags);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_NOISE_CMS2, "%d",        altitudeEstimatorConfig()->alt_est_accel_noise_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_BIAS_NOISE_CMS2, "%d",   altitudeEstimatorConfig()->alt_est_accel_bias_noise_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_BIAS_LIMIT_CMS2, "%d",   altitudeEstimatorConfig()->alt_est_accel_bias_limit_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_BARO_NOISE_CM, "%d",           altitudeEstimatorConfig()->alt_est_baro_noise_cm);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_BARO_DELAY_MS, "%d",           altitudeEstimatorConfig()->alt_est_baro_delay_ms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_INNOV_VAR_FLOOR_CM2, "%d",     altitudeEstimatorConfig()->alt_est_innov_var_floor_cm2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_HISTORY_MS, "%d",              altitudeEstimatorConfig()->alt_est_history_ms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_GATE_SIGMA_X10, "%d",          altitudeEstimatorConfig()->alt_est_gate_sigma_x10);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_RECOVERY_START_FRAMES, "%d",   altitudeEstimatorConfig()->alt_est_recovery_start_frames);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_RECOVERY_R_SCALE_X10, "%d",    altitudeEstimatorConfig()->alt_est_recovery_r_scale_x10);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_RECOVERY_DECAY_TC_FRAMES, "%d", altitudeEstimatorConfig()->alt_est_recovery_decay_tc_frames);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_INNOV_THRESH_CM, "%d",    altitudeEstimatorConfig()->alt_est_step_innov_thresh_cm);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_RATE_THRESH_CMS, "%d",    altitudeEstimatorConfig()->alt_est_step_rate_thresh_cms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_RATE_FILTER_TAU_MS, "%d", altitudeEstimatorConfig()->alt_est_step_rate_filter_tau_ms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_STREAK_FRAMES, "%d",      altitudeEstimatorConfig()->alt_est_step_streak_frames);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_OFFSET_ALPHA_X1000, "%d", altitudeEstimatorConfig()->alt_est_step_offset_alpha_x1000);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_OFFSET_LIMIT_CM, "%d",    altitudeEstimatorConfig()->alt_est_step_offset_limit_cm);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_HEIGHT_RATE_LPF_HZ_X100, "%d", altitudeEstimatorConfig()->alt_est_height_rate_lpf_hz_x100);
 #ifdef USE_BARO_ALTHOLD
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KZ_X100, "%d",       positionConfig()->alt_hold_kz_x100);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KPV, "%d",           positionConfig()->alt_hold_kpv);
