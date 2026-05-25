@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Altitude Tuning Operator</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="operator">
+    <h1>Operator</h1>
+    <section class="panel active">
+      <h2>Login</h2>
+      <div class="toolbar">
+        <input id="secretInput" type="password" placeholder="operator secret">
+        <button id="loginBtn">Login</button>
+      </div>
+    </section>
+    <section class="panel active">
+      <h2>Pair Phone</h2>
+      <div class="toolbar">
+        <button id="pairBtn">Create Pairing</button>
+      </div>
+      <div id="qr"></div>
+      <pre id="operatorOutput"></pre>
+    </section>
+  </main>
+  <script>
+    async function post(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify(body || {})
+      });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!res.ok) throw new Error(data.error || text);
+      return data;
+    }
+    document.getElementById('loginBtn').onclick = async () => {
+      try {
+        const data = await post('/api/operator/login', {secret: document.getElementById('secretInput').value});
+        document.getElementById('operatorOutput').textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        document.getElementById('operatorOutput').textContent = String(error);
+      }
+    };
+    document.getElementById('pairBtn').onclick = async () => {
+      try {
+        const data = await post('/api/pairing/start');
+        document.getElementById('qr').innerHTML = data.qrSvg;
+        document.getElementById('operatorOutput').textContent = data.pairUrl;
+      } catch (error) {
+        document.getElementById('operatorOutput').textContent = String(error);
+      }
+    };
+  </script>
+</body>
+</html>

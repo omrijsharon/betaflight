@@ -1,441 +1,462 @@
 # Altitude Estimator Implementation Plan
 
+Status reviewed: 2026-05-24.
+
+Legend:
+
+- `[x]` means implemented, documented, or verified for the scope stated on that line.
+- `[ ]` means still open.
+- A checked firmware implementation item does not mean flight-tuned or flight-validated unless the validation item is also checked.
+
 This plan turns the altitude-estimator research notes into a staged Betaflight implementation path. Scope is altitude and vertical velocity estimation only. Altitude-control loops will be planned separately after the estimator/logging loop is working.
 
-Source documents:
+## [x] Source Documents
 
-- `althold/ardupilot_ekf3_altitude_estimation.md`
-- `althold/betaflight_altitude_estimator_proposal.md`
+- [x] `althold/ardupilot_ekf3_altitude_estimation.md`
+- [x] `althold/betaflight_altitude_estimator_proposal.md`
 
-## Implementation Goal
+## [x] Implementation Goal
 
 Implement a robust vertical estimator for Betaflight using:
 
-- barometer height as the long-term altitude reference.
-- calculated attitude and accelerometer data for short-term vertical acceleration and velocity.
-- no baro-derived velocity fusion.
-- delayed baro fusion, or a staged path that records enough timing data to tune delay before enabling full rewind/replay.
-- explicit estimator health, reset, gate, and source-status outputs.
-- Blackbox/MSP/Pi logging designed for tuning and analysis.
+- [x] Barometer height as the long-term altitude reference.
+- [x] Calculated attitude and accelerometer data for short-term vertical acceleration and velocity.
+- [x] No baro-derived velocity fusion.
+- [x] Delayed baro fusion with a history/replay path.
+- [x] Explicit estimator health, reset, gate, and source-status outputs.
+- [x] Blackbox/MSP/Pi logging designed for tuning and analysis.
 
 The estimator must provide:
 
-- altitude, positive up.
-- vertical velocity, positive up.
-- position-consistent altitude rate output.
-- estimator status flags.
-- reset/step/recovery event visibility.
+- [x] Altitude, positive up.
+- [x] Vertical velocity, positive up.
+- [x] Position-consistent altitude-rate output.
+- [x] Estimator status flags.
+- [x] Reset/step/recovery event visibility in estimator status and logs.
 
-## Decisions Already Made
+## [x] Decisions Already Made
 
-- Do not port ArduPilot EKF3 as a full 24-state EKF.
-- Use a dedicated 1D vertical estimator.
-- Start from a 3-state EKF: `z`, `v`, and accelerometer bias `ba`.
-- Keep barometer offset/datum handling outside the EKF state.
-- Do not fuse differentiated baro as an independent velocity measurement.
-- Use positive-up values in Betaflight-facing APIs.
-- New altitude-control mode naming should be `ALTITUDE_MODE` / `BOXALTITUDE`; old `BARO_MODE` / `BOXBARO` can only be temporary aliases.
-- Build logs and tune tooling before trying to tune estimator gates in flight.
+- [x] Do not port ArduPilot EKF3 as a full 24-state EKF.
+- [x] Use a dedicated 1D vertical estimator.
+- [x] Start from a 3-state EKF: `z`, `v`, and accelerometer bias `ba`.
+- [x] Keep barometer offset/datum handling outside the EKF state.
+- [x] Do not fuse differentiated baro as an independent velocity measurement.
+- [x] Use positive-up values in Betaflight-facing APIs.
+- [x] New altitude-control mode naming is `ALTITUDE_MODE` / `BOXALTITUDE`.
+- [x] Old `BARO_MODE` / `BOXBARO` remain only as temporary aliases.
+- [x] Build logs and tune tooling before trying to tune estimator gates in flight.
 
-## Open Decisions Before Coding
+## [x] Resolved Coding Decisions
 
-- Whether the first merge should include full delayed fusion, or a current-time EKF with timestamp logging and delayed-fusion scaffolding. Preferred answer: build the history/replay structure from the start if resource usage stays reasonable.
-- Exact persistent parameter names and scaling. Preferred prefix: `alt_est_*`.
-- Exact MSP2 command IDs and payload layouts.
-- Exact Blackbox field names and whether to reuse the existing altitude field-select bit or add a new field-select bit.
-- Whether to keep the existing local `ekf_*` CLI/MSP v1 parameters as temporary migration names.
-- Where to place estimator PG config: temporary `positionConfig_t` fields or a new altitude estimator PG.
+- [x] First estimator implementation includes delayed fusion with history/replay.
+- [x] Persistent estimator parameter prefix is `alt_est_*`.
+- [x] MSP2 command IDs are defined:
+  - [x] `MSP2_BETAFLIGHT_ALT_EST_CONFIG = 0x3010`
+  - [x] `MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG = 0x3011`
+  - [x] `MSP2_BETAFLIGHT_ALT_EST_STATUS = 0x3012`
+- [x] Blackbox reuses altitude/baro logging integration and adds dedicated estimator fields.
+- [x] Existing local `ekf_*` / `alt_hold_*` settings can remain temporarily, but the new estimator uses `alt_est_*`.
+- [x] Estimator config lives in a new PG: `PG_ALTITUDE_ESTIMATOR_CONFIG = 559`.
 
-## Phase 1: Current-Code Reconciliation
+## [x] Phase 1: Current-Code Reconciliation
 
 Read the current local implementation and map all call sites before moving code:
 
-- `src/main/flight/position.c`
-- `src/main/flight/position.h`
-- `src/main/fc/tasks.c`
-- `src/main/sensors/barometer.c`
-- `src/main/fc/core.c`
-- `src/main/fc/runtime_config.h`
-- `src/main/fc/rc_modes.h`
-- `src/main/msp/msp.c`
-- `src/main/msp/msp_protocol.h`
-- `src/main/msp/msp_protocol_v2_betaflight.h`
-- `src/main/blackbox/blackbox.c`
-- `src/main/blackbox/blackbox_fielddefs.h`
-- `src/main/cli/settings.c`
-- `src/main/fc/parameter_names.h`
+- [x] `src/main/flight/position.c`
+- [x] `src/main/flight/position.h`
+- [x] `src/main/fc/tasks.c`
+- [x] `src/main/sensors/barometer.c`
+- [x] `src/main/fc/core.c`
+- [x] `src/main/fc/runtime_config.h`
+- [x] `src/main/fc/rc_modes.h`
+- [x] `src/main/msp/msp.c`
+- [x] `src/main/msp/msp_protocol.h`
+- [x] `src/main/msp/msp_protocol_v2_betaflight.h`
+- [x] `src/main/blackbox/blackbox.c`
+- [x] `src/main/blackbox/blackbox_fielddefs.h`
+- [x] `src/main/cli/settings.c`
+- [x] `src/main/fc/parameter_names.h`
 
 Expected output:
 
-- list of estimator inputs currently available.
-- list of altitude outputs currently consumed.
-- list of old `USE_BARO_ALTHOLD` paths to remove or isolate from estimator work.
-- exact build flags that gate baro, vario, altitude, and old althold behavior.
+- [x] List of estimator inputs currently available.
+- [x] List of altitude outputs currently consumed.
+- [x] List of old `USE_BARO_ALTHOLD` paths to remove or isolate from estimator work.
+- [x] Exact build flags that gate baro, vario, altitude, and old althold behavior.
 
-## Phase 2: Estimator Module Boundary
+## [ ] Phase 2: Estimator Module Boundary
 
 Create a dedicated estimator module:
 
-- `src/main/flight/altitude_estimator.h`
-- `src/main/flight/altitude_estimator.c`
+- [x] `src/main/flight/altitude_estimator.h`
+- [x] `src/main/flight/altitude_estimator.c`
+- [x] Include `flight/altitude_estimator.c` in `mk/source.mk`.
+- [x] Add estimator source to relevant unit-test source lists.
 
-Keep `position.c` as temporary glue only. It should call the new module and expose existing wrappers until callers are migrated:
+Keep `position.c` as temporary glue only:
 
-- `getEstimatedAltitudeCm()`
-- `getAltitude()`
-- `getEstimatedVario()`
+- [x] `calculateEstimatedAltitude()` feeds baro and IMU-derived vertical acceleration to the new estimator.
+- [x] `getEstimatedAltitudeCm()` returns the new estimator output through the existing wrapper path.
+- [x] `getAltitude()` returns the new estimator output.
+- [x] `getEstimatedVario()` returns the new estimator vertical velocity path when `USE_VARIO` is enabled.
+- [x] Old altitude controller output is disabled by forcing throttle altitude correction to zero.
 
-Core public types:
+Core public/runtime types:
 
-- config struct for persistent tunables.
-- runtime state struct for `z`, `v`, `ba`, covariance, output predictor, datum, and flags.
-- timestamped measurement struct with source, type, value, variance, quality, and timestamp.
-- status/log struct that snapshots all values needed by MSP and Blackbox.
+- [x] Config struct for persistent tunables.
+- [x] Runtime state for `z`, `v`, `ba`, covariance, output predictor, datum, and flags.
+- [x] Source-agnostic timestamped measurement struct for future sensors.
+- [x] Status/log struct that snapshots values needed by MSP and Blackbox.
 
-## Phase 3: Estimator Config
+## [ ] Phase 3: Estimator Config
 
 Add estimator tunables with explicit units and conservative defaults:
 
-- accelerometer process noise.
-- accelerometer bias process noise.
-- accelerometer bias limit.
-- baro height noise.
-- baro delay.
-- height gate sigma.
-- minimum innovation variance.
-- covariance floors.
-- recovery timeout.
-- recovery `R` inflation.
-- baro step detector thresholds.
-- baro offset step limits.
-- height-rate complementary filter frequency.
-- optional `R` inflation controls for tilt, high vertical acceleration, takeoff/landing, and vibration.
+- [x] Accelerometer process noise.
+- [x] Accelerometer bias process noise.
+- [x] Accelerometer bias limit.
+- [x] Baro height noise.
+- [x] Baro delay.
+- [x] Height gate sigma.
+- [x] Minimum innovation variance.
+- [x] Recovery timeout/start threshold.
+- [x] Recovery `R` inflation.
+- [x] Baro step detector thresholds.
+- [x] Baro offset step limits.
+- [x] Height-rate complementary filter frequency.
+- [x] Covariance floors as explicit configurable parameters.
+- [x] Optional `R` inflation controls for tilt.
+- [x] Optional `R` inflation controls for high vertical acceleration.
+- [ ] Optional `R` inflation controls for takeoff/landing.
+- [ ] Optional `R` inflation controls for vibration.
 
 Use ArduPilot defaults as starting references:
 
-- accelerometer process noise near `0.35 m/s^2`.
-- accel bias process noise near `0.02 m/s^3`.
-- baro noise initially `0.75 m` to `2.0 m` for small propwash-heavy quads.
-- baro delay near `60 ms`.
-- height gate initially `5 sigma` for early flight testing, then tighten.
-- height-rate filter near `2 Hz`.
+- [x] Accelerometer process noise near `0.35 m/s^2`.
+- [x] Accel bias process noise near `0.02 m/s^3`.
+- [x] Baro noise initially `0.75 m` to `2.0 m`; current default is `1.50 m`.
+- [x] Baro delay near `60 ms`.
+- [x] Height gate initially `5 sigma`.
+- [x] Height-rate filter near `2 Hz`.
 
-## Phase 4: IMU Prediction
+## [ ] Phase 4: IMU Prediction
 
 Implement prediction from vertical acceleration:
 
-- convert calibrated accelerometer data to m/s^2.
-- rotate body acceleration into world frame using the current attitude matrix/quaternion.
-- subtract gravity.
-- subtract estimated vertical accelerometer bias.
-- integrate altitude and velocity with real `dt`.
-- clamp `dt` to survive scheduler jitter.
-- detect accelerometer clipping or invalid attitude and set status flags.
+- [x] Convert calibrated accelerometer data to `m/s^2`.
+- [x] Rotate body acceleration into world frame using the current attitude matrix.
+- [x] Subtract gravity.
+- [x] Subtract estimated vertical accelerometer bias.
+- [x] Integrate altitude and velocity with real `dt`.
+- [x] Clamp `dt` to survive scheduler jitter.
+- [ ] Detect accelerometer clipping and set status flags.
+- [ ] Detect invalid attitude and set status flags.
 
 Initial EKF state:
 
-```text
-x = [ z, v, ba ]
-```
+- [x] `x = [ z, v, ba ]`
 
 Initial transition:
 
-```text
-z  = z + v*dt + 0.5*(a_world_z - ba)*dt^2
-v  = v + (a_world_z - ba)*dt
-ba = ba
-```
+- [x] `z = z + v*dt + 0.5*(a_world_z - ba)*dt^2`
+- [x] `v = v + (a_world_z - ba)*dt`
+- [x] `ba = ba`
 
 Near-term improvement:
 
-- accumulate accelerometer delta-v between altitude task executions if Betaflight exposes the necessary data cleanly.
-- feed the estimator delta-v plus delta-time instead of one instantaneous acceleration sample.
+- [ ] Accumulate accelerometer delta-v between altitude task executions if Betaflight exposes the necessary data cleanly.
+- [ ] Feed the estimator delta-v plus delta-time instead of one instantaneous acceleration sample.
 
-## Phase 5: Barometer Measurement Plumbing
+## [ ] Phase 5: Barometer Measurement Plumbing
 
 Baro must enter as timestamped height, not as "latest global altitude":
 
-- capture pressure/altitude conversion timestamp.
-- define armed/home datum.
-- convert to positive-up altitude above datum.
-- attach variance and quality.
-- include measurement age in status/log outputs.
+- [ ] Capture the actual pressure/altitude conversion timestamp from the barometer path.
+- [x] Pass a baro timestamp into the estimator API. Current implementation uses altitude task time as the baro timestamp.
+- [x] Define armed/home datum behavior.
+- [x] Convert to positive-up altitude above datum inside the estimator datum/offset model.
+- [x] Attach configured variance.
+- [ ] Attach source quality beyond simple baro-present status.
+- [x] Include measurement age in status/log outputs.
 
 Rules:
 
-- fuse baro position only.
-- do not fuse baro derivative as velocity.
-- keep baro datum/offset outside the EKF state.
-- reset datum when disarmed or on first arm.
-- do not reset datum in flight unless a logged source-reset event occurs.
+- [x] Fuse baro position only.
+- [x] Do not fuse baro derivative as velocity.
+- [x] Keep baro datum/offset outside the EKF state.
+- [x] Reset datum when disarmed or on first arm.
+- [x] Do not reset datum in flight unless a logged source-reset/step event occurs.
 
-## Phase 6: Baro Fusion
+## [x] Phase 6: Baro Fusion
 
 Implement scalar baro height fusion:
 
-- innovation: `innov = z_baro - z_pred`.
-- innovation variance: `S = HPH' + R`.
-- apply a floor to `S`.
-- gate using `innov^2 / S`.
-- update all three states through covariance cross-terms.
-- update covariance with a numerically safe scalar form.
-- constrain accelerometer bias after update.
-- log accept/reject reason and effective `R`.
+- [x] Innovation: `innov = z_baro - z_pred`.
+- [x] Innovation variance: `S = HPH' + R`.
+- [x] Apply a floor to `S`.
+- [x] Gate using `innov^2 / S`.
+- [x] Update all three states through covariance cross-terms.
+- [x] Update covariance with a numerically safe scalar form.
+- [x] Constrain accelerometer bias after update.
+- [x] Log accept/reject reason and effective `R`.
 
-If delayed fusion is implemented immediately:
+Delayed fusion:
 
-- store predicted state/covariance/input history in a ring buffer.
-- subtract configured baro delay from baro measurement timestamp.
-- find the closest delayed state.
-- fuse there.
-- replay buffered IMU increments to current time.
+- [x] Store predicted state/covariance/input history in a ring buffer.
+- [x] Subtract configured baro delay from baro measurement timestamp when delayed fusion is enabled.
+- [x] Find the closest delayed state.
+- [x] Fuse there.
+- [x] Replay buffered IMU increments to current time.
 
-If delayed fusion is staged:
-
-- keep a clear interface for delayed fusion.
-- log sample timestamp, estimator timestamp, configured delay, measured age, and current-time innovation.
-- do not pretend the current-time estimator is final.
-
-## Phase 7: Output Predictor And Position Rate
+## [ ] Phase 7: Output Predictor And Position Rate
 
 Expose two vertical-rate outputs:
 
-- `velocity`: EKF velocity state.
-- `positionRate`: position-consistent altitude derivative.
+- [x] `velocity`: EKF velocity state.
+- [x] `positionRate`: position-consistent altitude derivative.
 
 Implement the third-order baro-inertial complementary filter described in the proposal:
 
-- input: published altitude and vertical acceleration.
-- output: position-consistent altitude rate.
-- default crossover: about `2 Hz`.
+- [x] Input: published altitude and vertical acceleration.
+- [x] Output: position-consistent altitude rate.
+- [x] Default crossover: about `2 Hz`.
 
 Use `positionRate` for:
 
-- high-vibration fallback.
-- reset recovery.
-- later controller logic that needs continuity after estimator correction steps.
+- [ ] High-vibration fallback.
+- [ ] Reset recovery.
+- [ ] Later controller logic that needs continuity after estimator correction steps.
 
-## Phase 8: Robustness And Reset Policy
+## [ ] Phase 8: Robustness And Reset Policy
 
 Minimum required behavior:
 
-- covariance floors to prevent overconfidence.
-- innovation variance floor to prevent gate lockout.
-- persistent reject detection.
-- recovery mode with temporary `R` inflation.
-- explicit reset events.
-- explicit baro step/offset events.
-- no silent altitude jumps.
+- [x] Covariance floor behavior in estimator math.
+- [x] Innovation variance floor to prevent gate lockout.
+- [x] Persistent reject detection.
+- [x] Recovery mode with temporary `R` inflation.
+- [x] Explicit reset events.
+- [x] Explicit baro step/offset events.
+- [x] No silent altitude jumps from baro step handling; offset is logged.
 
 Disturbance handling:
 
-- inflate baro `R` for high tilt.
-- inflate baro `R` during high vertical acceleration.
-- mark accelerometer clipping/high vibration.
-- add takeoff/landing ground-effect handling once controller/motor state is available.
+- [x] Inflate baro `R` for high tilt.
+- [x] Inflate baro `R` during high vertical acceleration.
+- [ ] Mark accelerometer clipping/high vibration.
+- [ ] Add takeoff/landing ground-effect handling once controller/motor state is available.
 
 Baro step handling:
 
-- detect sustained large innovation with baro rate evidence.
-- adjust baro datum/offset, not EKF altitude directly.
-- limit per-event offset change.
-- log current offset and event reason.
+- [x] Detect sustained large innovation with baro-rate evidence.
+- [x] Adjust baro datum/offset, not EKF altitude directly.
+- [x] Limit per-event offset change.
+- [x] Log current offset and event reason/flag.
 
-## Phase 9: CLI, MSP2, And Blackbox Contract
+## [ ] Phase 9: CLI, MSP2, And Blackbox Contract
 
 Implement observability before serious flight tuning.
 
 CLI:
 
-- add estimator parameters with `alt_est_*` names where possible.
-- use explicit scaled units in names.
-- add Blackbox parameter-name constants for all tuning parameters.
+- [x] Add estimator parameters with `alt_est_*` names.
+- [x] Use explicit scaled units in names where possible.
+- [x] Add Blackbox parameter-name constants for all tuning parameters.
 
 MSP:
 
-- keep `MSP_ALTITUDE` as the simple altitude/vario output.
-- define new MSP2 payloads for estimator config and status.
-- include payload version bytes.
-- append fields only at the end.
-- refresh runtime tunables after config writes.
+- [x] Keep `MSP_ALTITUDE` as the simple altitude/vario output.
+- [x] Define new MSP2 payload for estimator config.
+- [x] Define new MSP2 payload for estimator config writes.
+- [x] Define new MSP2 payload for estimator status.
+- [x] Include payload version bytes.
+- [x] Append-field compatible layout is established for v1 payloads.
+- [x] Refresh runtime tunables after config writes.
+- [ ] Validate MSP2 config/status handlers against a real FC.
 
 Blackbox:
 
-- add dedicated estimator fields, not only `debug[0..7]`.
-- log estimated altitude, velocity, position-rate, vertical acceleration, accelerometer bias, baro altitude, innovation, `S`, gate, effective `R`, flags, baro offset, sample age, delay, and tune profile ID.
-- print all estimator tuning params in headers.
-- add event visibility for reset, recovery, and step handling.
+- [x] Add dedicated estimator fields, not only `debug[0..7]`.
+- [x] Log estimated altitude.
+- [x] Log velocity.
+- [x] Log position-rate.
+- [x] Log vertical acceleration.
+- [x] Log accelerometer bias.
+- [x] Log baro altitude.
+- [x] Log innovation.
+- [x] Log `S`.
+- [x] Log gate.
+- [x] Log effective `R`.
+- [x] Log flags.
+- [x] Log baro offset.
+- [x] Log sample age.
+- [x] Log configured delay through MSP status and parameter headers.
+- [ ] Log tune profile ID if/when tune profiles exist.
+- [x] Print estimator tuning params in Blackbox headers.
+- [x] Add event visibility for reset, recovery, and step handling through status flags.
+- [ ] Validate Blackbox output from real FC logs.
 
-## Phase 10: Pi Logger, Log Transfer, And Codex Analysis
+## [x] Phase 10: Pi Logger, Log Transfer, And Codex Analysis
 
 Important workflow decision:
 
-- Do not build the tuning-analysis loop around an OpenAI API key inside `desktop-agent` or the Pi webapp.
-- The Pi and desktop tooling are responsible for collecting, transferring, archiving, and opening logs.
-- Codex in this local repository will analyze downloaded logs and propose tuning parameter changes.
-- Analysis scripts can be generated and run locally by Codex against the downloaded files.
-- Any work that is not Betaflight firmware implementation must live under the root `althold/` directory in this repository.
-- External repos are references only. Copy/adapt useful pieces into `althold/` instead of making the workflow depend on editing `desktop-agent` or `ArUco_Chaser`.
+- [x] Do not build the tuning-analysis loop around an OpenAI API key inside `desktop-agent` or the Pi webapp.
+- [x] Pi and desktop tooling collect, transfer, archive, and open logs.
+- [x] Codex in this local repository analyzes downloaded logs and proposes tuning parameter changes.
+- [x] Analysis scripts are local and have no OpenAI API use.
+- [x] Any non-firmware implementation lives under root `althold/`.
+- [x] External repos are references only.
 
-Suggested non-firmware workspace layout:
+Non-firmware workspace layout:
 
-- `althold/pi_logger/` for the Pi Zero Flask/logger app and MSP2 recorder code.
-- `althold/desktop_tools/` for the local Windows helper that connects to the Pi AP, starts/stops the logger, pulls logs, archives runs, and shows the latest bundle path.
-- `althold/analysis/` for Codex-run parsers, plotting scripts, metrics, and reusable tuning-analysis helpers.
-- `althold/logs/` for downloaded or sample log bundles if we decide to keep short test fixtures in-repo. Real flight logs may be large and should be git-ignored if stored here.
-- `althold/config_examples/` for example Pi/logger/desktop config files without secrets.
+- [x] `althold/pi_logger/` contains the Pi Zero Flask/logger app and MSP2 recorder code.
+- [x] `althold/desktop_tools/` contains local Windows helper code.
+- [x] `althold/analysis/` contains Codex-run parser/metrics helpers.
+- [x] `althold/logs/` exists and real logs are git-ignored by default.
+- [x] Example configs live under the relevant `althold/` subdirectories.
 
-Reuse the previous collection/transfer pipeline where possible:
+Reuse/adapt previous collection pipeline:
 
-- desktop orchestration from `C:/Users/tamipinhasi/Documents/repos/desktop-agent/src/desktop_agent/automated_calibration_ui.py`.
-- Wi-Fi/SSH/SCP helpers from `C:/Users/tamipinhasi/Documents/repos/desktop-agent/src/desktop_agent/automated_calibration_ops.py`.
-- config structure from `C:/Users/tamipinhasi/Documents/repos/desktop-agent/src/desktop_agent/automated_calibration_config.py`, but remove or bypass API-key/model settings for this workflow.
-- Pi Flask recorder pattern from `C:/Users/tamipinhasi/Documents/repos/ArUco_Chaser/tests/z_ekf_calibration_webapp/app.py`.
-
-Required adaptations:
-
-- rename old `Z_EKF` concepts to `ALTITUDE` / `alt_est`.
-- replace old MSP v1 config calls with new MSP2 calls.
-- replace `debug[0..7]` JSONL assumptions with dedicated estimator status fields.
-- keep session metadata and download endpoints.
-- keep log bundles self-describing with firmware version, tune profile, field schema, and parameter snapshot.
-- remove any hard dependency on `OPENAI_API_KEY` for the calibration workflow.
-- do not launch `CalibrationAnalysisWindow` as the normal analysis path if it requires API credentials.
-- add a simple "open logs folder / copy path for Codex" workflow, or write a run manifest that points Codex at the latest downloaded bundle.
-- place the adapted Pi app, desktop helper, analysis scripts, schemas, and example configs under `althold/`.
+- [x] Reviewed `desktop-agent` as reference material.
+- [x] Copied/adapted the useful workflow shape into this repo instead of depending on `desktop-agent`.
+- [x] Replaced old `Z_EKF` concepts with `ALTITUDE` / `alt_est` naming in the new local tooling.
+- [x] Replaced old MSP v1 assumptions with MSP2 client calls.
+- [x] Replaced `debug[0..7]` JSONL assumptions with dedicated estimator status fields.
+- [x] Kept session metadata and download endpoints.
+- [x] Kept log bundles self-describing with manifest/config snapshots.
+- [x] Removed any hard dependency on `OPENAI_API_KEY`.
+- [x] Avoided `CalibrationAnalysisWindow` as the normal analysis path.
+- [x] Added local helper behavior for dry-run paths, command generation, archive creation, and latest-bundle selection.
 
 Codex analysis loop:
 
-1. User downloads/pulls the flight bundle from the Pi to the local computer.
-2. User asks Codex to analyze the latest run or a specific log directory.
-3. Codex reads the local log bundle, writes/updates local parsing scripts if needed, runs the analysis, and summarizes metrics.
-4. Codex proposes new estimator parameter values with rationale and expected effect.
-5. User applies candidate parameters through the Pi webapp/MSP2 path.
-6. Repeat with the next flight.
+- [x] Parser accepts the local Pi session bundle format.
+- [x] Metrics include innovation stats, normalized innovation, reject/recovery/step counts, velocity plausibility, bias convergence, baro delay/correlation, and altitude drift.
+- [x] Output includes `summary.json` and `summary.csv`.
+- [x] Optional plots are supported when `matplotlib` is available.
+- [ ] Analyze a real flight bundle.
+- [ ] Use the analysis to recommend estimator parameter changes from real data.
+- [ ] Apply candidate parameters through the Pi webapp/MSP2 path against a real FC.
 
-## Phase 10b: Pi Field-Readiness Setup
-
-After firmware, MSP2, logging, and local tooling are ready, the Pi Zero 2 W should be prepared over SSH for field experiments.
+## [ ] Phase 10b: Pi Field-Readiness Setup
 
 Field network policy:
 
-- Preferred field mode: both the laptop and Pi connect to the smartphone hotspot.
-- In preferred field mode, the laptop stays online and reaches the Pi through Tailscale.
-- Pi boot/network fallback order:
-  1. Try to connect to the smartphone hotspot.
-  2. If the hotspot is unavailable, try to connect to home Wi-Fi.
-  3. If home Wi-Fi is also unavailable, start the Pi's own access point for offline local access.
-- Tailscale should be brought up only when the Pi is connected to the smartphone hotspot.
-- If the Pi is on home Wi-Fi or its own AP fallback, the connection manager should bring Tailscale down or leave it down.
-- The Pi logger/webapp must still work in all three modes:
-  - phone hotspot + Tailscale.
-  - home Wi-Fi without automatic Tailscale.
-  - Pi AP fallback without internet.
+- [x] Preferred field mode: both the laptop and Pi connect to the smartphone hotspot.
+- [x] In preferred field mode, the laptop stays online and reaches the Pi through Tailscale.
+- [x] Pi boot/network fallback order is hotspot, home Wi-Fi, then Pi AP.
+- [x] Tailscale is brought up automatically only when the Pi is connected to the smartphone hotspot.
+- [x] Tailscale is brought down or left down on home Wi-Fi and AP fallback.
+- [x] Pi logger/webapp works over phone hotspot + Tailscale.
+- [x] Pi logger/webapp works over home Wi-Fi without automatic Tailscale.
+- [ ] Pi logger/webapp works over Pi AP fallback without internet.
 
-Tailscale install and verification reference:
+Tailscale setup:
 
-- Official Raspberry Pi/Linux install docs:
-  - `https://tailscale.com/docs/install/linux`
-  - `https://tailscale.com/download/linux/rpi`
-- Install on Raspberry Pi OS:
-
-```sh
-curl -fsSL https://tailscale.com/install.sh | sh
-```
-
-- First authentication, performed manually during setup:
-
-```sh
-sudo tailscale up
-```
-
-- Verify assigned tailnet address and peer status:
-
-```sh
-tailscale ip
-tailscale status
-```
-
-- After first authentication, the field network-mode service should control runtime state:
-
-```sh
-sudo tailscale up     # only when connected to the smartphone hotspot
-sudo tailscale down   # on home Wi-Fi or Pi AP fallback
-```
-
-- Consider disabling key expiry for the Pi in the Tailscale admin console after setup, because the Pi is a field device and re-authentication at the field would be disruptive.
+- [x] Document official Raspberry Pi/Linux install docs:
+  - [x] `https://tailscale.com/docs/install/linux`
+  - [x] `https://tailscale.com/download/linux/rpi`
+- [x] Install on Raspberry Pi OS with `curl -fsSL https://tailscale.com/install.sh | sh`.
+- [x] Authenticate the Pi manually.
+- [x] Verify assigned tailnet address and peer status.
+- [x] Verify Windows laptop Tailscale connectivity to Pi.
+- [x] Bring Tailscale down after manual home-Wi-Fi test.
+- [ ] Consider disabling key expiry for the Pi in the Tailscale admin console.
 
 When the user authorizes Pi access:
 
-- SSH into the Pi from the development machine.
-- install or verify Python dependencies for the `althold/pi_logger/` app.
-- install Tailscale on the Pi, but manage when it is brought up through our network-mode script.
-- deploy/copy the current Pi logger app from this repository to the Pi.
-- configure UART device, baud rate, user permissions, and serial service conflicts.
-- configure the Pi Wi-Fi behavior needed at the field: smartphone hotspot first, home Wi-Fi second, Pi AP fallback last.
-- configure a small network-mode script/service that detects the active SSID/network and runs `tailscale up` only on the smartphone hotspot, otherwise `tailscale down`.
-- configure log directories and retention policy.
-- add a systemd service or explicit launch script for the logger/webapp.
-- verify the webapp is reachable over the Pi AP.
-- verify the webapp is reachable over Tailscale when both laptop and Pi are on the smartphone hotspot.
-- verify MSP/MSP2 communication with the FC.
-- perform a dry-run recording session without flying.
-- pull the test log back to the local computer and run the Codex analysis parser.
-- document the exact Pi setup commands in `althold/pi_logger/` so the setup is reproducible.
+- [x] SSH into the Pi from the development machine.
+- [x] Install or verify Python dependencies for `althold/pi_logger/`.
+- [x] Install Tailscale on the Pi.
+- [x] Manage runtime Tailscale state through the network-mode helper/service.
+- [x] Deploy/copy the current Pi logger app from this repository to the Pi.
+- [ ] Configure UART device, baud rate, user permissions, and serial service conflicts for real FC MSP2.
+- [x] Configure Pi Wi-Fi behavior: smartphone hotspot first, home Wi-Fi second, Pi AP fallback last.
+- [x] Configure a network-mode helper/service that detects the active network and runs `tailscale up` only on the smartphone hotspot.
+- [x] Configure log directories and retention location.
+- [x] Add a systemd service for the logger/webapp.
+- [x] Add a systemd service for the field network helper.
+- [x] Verify the webapp is reachable over Tailscale when laptop is on home Wi-Fi and Pi is on the smartphone hotspot.
+- [ ] Verify the webapp is reachable over the Pi AP.
+- [ ] Verify MSP/MSP2 communication with the FC.
+- [x] Perform a fake-MSP dry-run recording session without flying.
+- [ ] Pull a test log back to the local computer and run the Codex analysis parser on that downloaded bundle.
+- [x] Document the Pi setup commands in `althold/pi_logger/README.md`.
 
-## Phase 11: Bench And Replay Validation
+Secret/config hygiene:
+
+- [x] Add `althold/pi_logger/field_network.example.json` as a non-secret template.
+- [x] Add local ignored `althold/pi_logger/field_network.json` for real SSIDs/passwords.
+- [x] Add `.gitignore` rules for Wi-Fi/password credential JSON files.
+- [x] Copy the real network config to `/etc/althold/field_network.json` on the Pi with `600` permissions.
+- [x] Keep real Wi-Fi passwords out of git.
+
+## [ ] Phase 11: Bench And Replay Validation
 
 Before flight:
 
-- stationary bench log: velocity near zero, bias bounded, altitude does not walk rapidly.
-- hand lift/drop: signs of altitude and velocity correct.
-- pressure disturbance near baro: no permanent gate lockout.
-- synthetic baro step replay: offset handling does not create a velocity spike.
-- timing test: baro sample age and configured delay are visible.
-- parser test: analysis tool recovers field schema and parameters from logs.
+- [ ] Stationary bench log: velocity near zero, bias bounded, altitude does not walk rapidly.
+- [ ] Hand lift/drop: signs of altitude and velocity correct.
+- [ ] Pressure disturbance near baro: no permanent gate lockout.
+- [ ] Synthetic baro step replay: offset handling does not create a velocity spike from recorded/replayed data.
+- [x] Synthetic estimator unit tests cover baro fusion, delayed replay, gate/recovery, step offset, bias limit, and position-rate output.
+- [ ] Timing test: baro sample age and configured delay are visible in real logs.
+- [x] Parser test: analysis tool recovers field schema and parameters from generated logs.
 
 Replay metrics:
 
-- innovation mean/std/P95/P99.
-- normalized innovation squared.
-- reject percentage.
-- longest reject segment.
-- recovery count.
-- reset/step event count.
-- velocity plausibility against low-pass differentiated altitude.
-- bias convergence and bounds.
-- correlation/delay between baro motion and estimator output.
+- [x] Innovation mean/std/P95/P99 metric support.
+- [x] Normalized innovation metric support.
+- [x] Reject percentage metric support.
+- [x] Longest reject segment metric support.
+- [x] Recovery count metric support.
+- [x] Reset/step event count metric support.
+- [x] Velocity plausibility metric support.
+- [x] Bias convergence and bounds metric support.
+- [x] Correlation/delay metric support.
+- [ ] Run these metrics on a real bench log.
+- [ ] Run these metrics on a real hover/flight log.
 
-## Phase 12: Estimator-Only Flight Validation
+## [ ] Phase 12: Estimator-Only Flight Validation
 
 Fly with altitude-control mode disabled first:
 
-- hover.
-- slow climb/descent.
-- throttle punch.
-- forward flight with tilt.
-- takeoff/landing ground-effect checks.
+- [ ] Hover.
+- [ ] Slow climb/descent.
+- [ ] Throttle punch.
+- [ ] Forward flight with tilt.
+- [ ] Takeoff/landing ground-effect checks.
 
 Acceptance before controller work:
 
-- altitude sign and velocity sign are correct.
-- velocity magnitude is plausible.
-- no realistic baro disturbance causes permanent gate lockout.
-- no large altitude jump from ordinary propwash.
-- bias remains bounded.
-- baro delay is measurable in logs.
-- every reset/recovery/step event is visible in logs.
-- tuning recommendations can point to logged evidence.
+- [ ] Altitude sign and velocity sign are correct.
+- [ ] Velocity magnitude is plausible.
+- [ ] No realistic baro disturbance causes permanent gate lockout.
+- [ ] No large altitude jump from ordinary propwash.
+- [ ] Bias remains bounded.
+- [ ] Baro delay is measurable in logs.
+- [ ] Every reset/recovery/step event is visible in logs.
+- [ ] Tuning recommendations can point to logged evidence.
 
-## First Code Milestone
+## [ ] First Code Milestone: Estimator-Only Firmware
 
-The first useful firmware milestone should be estimator-only:
+The first useful firmware milestone is estimator-only:
 
-- new `altitude_estimator` module compiles.
-- current wrappers return outputs from the new estimator.
-- old althold controller path is not used for new behavior.
-- baro + IMU estimator runs while altitude-control mode is disabled.
-- Blackbox/MSP status exposes enough data for bench and hover analysis.
-- Pi/local tooling can record and parse one estimator-only flight.
+- [x] New `altitude_estimator` module exists.
+- [x] New `altitude_estimator` module is included in firmware source lists.
+- [x] Current wrappers return outputs from the new estimator.
+- [x] Old althold controller path is not used for new behavior.
+- [x] Baro + IMU estimator runs in code while altitude-control behavior is disabled.
+- [x] Blackbox/MSP status exposes data for bench and hover analysis.
+- [x] Pi/local tooling can record and parse estimator-session data in fake-MSP mode.
+- [ ] Firmware is flashed to the FC.
+- [ ] Pi UART is connected to the FC.
+- [ ] Pi logger records real MSP2 estimator status from the FC.
+- [ ] One estimator-only bench log is recorded.
+- [ ] One estimator-only hover/flight log is recorded.
+- [ ] The first real log is analyzed and used to propose tuning changes.
 
-After this milestone, start tuning estimator parameters from logs. Do not start cascaded altitude controllers until this milestone is stable.
+After this milestone:
+
+- [ ] Start tuning estimator parameters from logs.
+- [ ] Do not start cascaded altitude controllers until estimator-only logs are stable.

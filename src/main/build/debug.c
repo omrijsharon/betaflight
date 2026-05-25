@@ -120,6 +120,6 @@ const char * const debugModeNames[DEBUG_COUNT] = {
     "EZLANDING",
     "RX_RAW",
     "MAG_ERROR",
-    "Z_EKF",
+    "ALTITUDE_ESTIMATOR",
     "BARO_ALTHOLD",
 };

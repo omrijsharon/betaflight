@@ -118,7 +118,22 @@ void calculateEstimatedAltitude(void)
         haveAccel = true;
     }
 
-    altitudeEstimatorUpdate(nowUs, ARMING_FLAG(ARMED), haveBaro, baroAltCm, nowUs, haveAccel, accelWorldZ);
+    altitudeEstimatorInput_t estimatorInput = {
+        .haveAccel = haveAccel,
+        .accelWorldZ = accelWorldZ,
+        .haveTilt = true,
+        .cosTilt = constrainf(rMat[2][2], 0.0f, 1.0f),
+    };
+    altitudeEstimatorMeasurement_t baroMeasurement = {
+        .timeUs = nowUs,
+        .source = ALT_EST_MEAS_SOURCE_BAROMETER,
+        .type = ALT_EST_MEAS_TYPE_ALTITUDE,
+        .valueCm = baroAltCm,
+        .varianceCm2 = 0.0f,
+        .quality = UINT8_MAX,
+        .flags = haveBaro ? ALT_EST_MEAS_FLAG_VALID : 0,
+    };
+    altitudeEstimatorUpdateWithMeasurements(nowUs, ARMING_FLAG(ARMED), haveBaro ? &baroMeasurement : NULL, haveBaro ? 1 : 0, &estimatorInput);
     const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
 
     displayAltitudeCm = pt2FilterApply(&altitudeLpf, status->altitudeCm);
@@ -128,14 +143,14 @@ void calculateEstimatedAltitude(void)
 
     mixerSetThrottleAltitudeCorrection(0);
 
-    DEBUG_SET(DEBUG_Z_EKF, 0, lrintf(status->accelWorldZCms2));
-    DEBUG_SET(DEBUG_Z_EKF, 1, lrintf(status->baroAltitudeCm));
-    DEBUG_SET(DEBUG_Z_EKF, 2, lrintf(status->altitudeCm));
-    DEBUG_SET(DEBUG_Z_EKF, 3, lrintf(status->velocityCms));
-    DEBUG_SET(DEBUG_Z_EKF, 4, lrintf(sqrtf(MAX(0.0f, status->rEffCm2))));
-    DEBUG_SET(DEBUG_Z_EKF, 5, lrintf(status->innovationCm));
-    DEBUG_SET(DEBUG_Z_EKF, 6, lrintf(status->gateCm));
-    DEBUG_SET(DEBUG_Z_EKF, 7, (int16_t)constrain((status->flags & ALT_EST_STATUS_BARO_REJECT) ? status->rejectStreak : 0, INT16_MIN, INT16_MAX));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 0, lrintf(status->accelWorldZCms2));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 1, lrintf(status->baroAltitudeCm));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 2, lrintf(status->altitudeCm));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 3, lrintf(status->velocityCms));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 4, lrintf(sqrtf(MAX(0.0f, status->rEffCm2))));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 5, lrintf(status->innovationCm));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 6, lrintf(status->gateCm));
+    DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 7, (int16_t)constrain((status->flags & ALT_EST_STATUS_BARO_REJECT) ? status->rejectStreak : 0, INT16_MIN, INT16_MAX));
 
 #ifdef USE_BARO
     DEBUG_SET(DEBUG_ALTITUDE, 1, lrintf((haveBaro ? (baroAltCm - status->baroOffsetCm) : 0.0f) / 10.0f));

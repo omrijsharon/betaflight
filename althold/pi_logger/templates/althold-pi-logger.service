@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/althold
-Environment=ALTHOLD_LOGGER_CONFIG=/opt/althold/pi_logger/config.json
+Environment=PYTHONPATH=/opt/althold
+Environment=ALTHOLD_LOGGER_CONFIG=/etc/althold/logger.json
 ExecStart=/opt/althold/venv/bin/python -m althold.pi_logger.app
 Restart=on-failure
 RestartSec=3

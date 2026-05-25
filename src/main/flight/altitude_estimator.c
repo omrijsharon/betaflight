@@ -8,7 +8,7 @@
 #include "pg/pg_ids.h"
 
 #define ALTITUDE_ESTIMATOR_HISTORY_MAX 128
-#define ALTITUDE_ESTIMATOR_DEFAULT_FLAGS (ALT_EST_CONFIG_DELAYED_FUSION | ALT_EST_CONFIG_ADAPTIVE_R | ALT_EST_CONFIG_BARO_STEP)
+#define ALTITUDE_ESTIMATOR_DEFAULT_FLAGS (ALT_EST_CONFIG_DELAYED_FUSION | ALT_EST_CONFIG_ADAPTIVE_R | ALT_EST_CONFIG_BARO_STEP | ALT_EST_CONFIG_TILT_R | ALT_EST_CONFIG_ACCEL_R)
 
 typedef struct altitudeState_s {
     float z;
@@ -41,6 +41,15 @@ typedef struct altitudeEstimatorRuntime_s {
     float innovVarianceFloor;
     float gateSigma;
     float heightRateCutoffHz;
+    float posFloor;
+    float velFloor;
+    float biasFloor;
+    float tiltRStartCos;
+    float tiltREndCos;
+    float tiltRScale;
+    float accelRStart;
+    float accelREnd;
+    float accelRScale;
 
     uint16_t rejectStreak;
     uint16_t recoveryFrames;
@@ -82,6 +91,15 @@ PG_RESET_TEMPLATE(altitudeEstimatorConfig_t, altitudeEstimatorConfig,
     .alt_est_step_offset_alpha_x1000 = 100,
     .alt_est_step_offset_limit_cm = 300,
     .alt_est_height_rate_lpf_hz_x100 = 200,
+    .alt_est_pz_floor_cm = 2,
+    .alt_est_pv_floor_cms = 2,
+    .alt_est_pba_floor_cms2 = 1,
+    .alt_est_tilt_r_start_deg = 45,
+    .alt_est_tilt_r_end_deg = 75,
+    .alt_est_tilt_r_scale_x10 = 50,
+    .alt_est_accel_r_start_cms2 = 300,
+    .alt_est_accel_r_end_cms2 = 800,
+    .alt_est_accel_r_scale_x10 = 50,
 );
 
 static altitudeEstimatorRuntime_t altEst;
@@ -94,6 +112,20 @@ static float metersFromCm(const float cm)
 static float cmFromMeters(const float meters)
 {
     return meters * 100.0f;
+}
+
+static bool isMeasurementValid(const altitudeEstimatorMeasurement_t *measurement)
+{
+    return measurement && (measurement->flags & ALT_EST_MEAS_FLAG_VALID) && measurement->type != ALT_EST_MEAS_TYPE_NONE;
+}
+
+static float measurementVarianceM2(const altitudeEstimatorMeasurement_t *measurement, const float fallbackStdDevM)
+{
+    if (measurement && measurement->varianceCm2 > 0.0f) {
+        return measurement->varianceCm2 * 0.0001f;
+    }
+
+    return sq(fallbackStdDevM);
 }
 
 static uint8_t historyLimitFromConfig(void)
@@ -115,6 +147,33 @@ void altitudeEstimatorUpdateConfig(void)
     altEst.innovVarianceFloor = MAX(0.0001f, cfg->alt_est_innov_var_floor_cm2 * 0.0001f);
     altEst.gateSigma = MAX(0.1f, cfg->alt_est_gate_sigma_x10 * 0.1f);
     altEst.heightRateCutoffHz = MAX(0.05f, cfg->alt_est_height_rate_lpf_hz_x100 * 0.01f);
+    altEst.posFloor = MAX(0.01f, cfg->alt_est_pz_floor_cm * 0.01f);
+    altEst.velFloor = MAX(0.01f, cfg->alt_est_pv_floor_cms * 0.01f);
+    altEst.biasFloor = MAX(0.01f, cfg->alt_est_pba_floor_cms2 * 0.01f);
+
+    const uint8_t tiltStartDeg = MIN(cfg->alt_est_tilt_r_start_deg, 89);
+    uint8_t tiltEndDeg = cfg->alt_est_tilt_r_end_deg;
+    if (tiltEndDeg <= tiltStartDeg) {
+        tiltEndDeg = tiltStartDeg + 1;
+    }
+    tiltEndDeg = constrain(tiltEndDeg, tiltStartDeg + 1, 90);
+    altEst.tiltRStartCos = cosf(tiltStartDeg * (M_PIf / 180.0f));
+    altEst.tiltREndCos = cosf(tiltEndDeg * (M_PIf / 180.0f));
+    altEst.tiltRScale = MAX(1.0f, cfg->alt_est_tilt_r_scale_x10 * 0.1f);
+
+    altEst.accelRStart = cfg->alt_est_accel_r_start_cms2 * 0.01f;
+    altEst.accelREnd = cfg->alt_est_accel_r_end_cms2 * 0.01f;
+    if (altEst.accelREnd <= altEst.accelRStart) {
+        altEst.accelREnd = altEst.accelRStart + 0.01f;
+    }
+    altEst.accelRScale = MAX(1.0f, cfg->alt_est_accel_r_scale_x10 * 0.1f);
+}
+
+static void applyCovarianceFloors(altitudeState_t *state)
+{
+    state->P[0][0] = MAX(state->P[0][0], sq(altEst.posFloor));
+    state->P[1][1] = MAX(state->P[1][1], sq(altEst.velFloor));
+    state->P[2][2] = MAX(state->P[2][2], sq(altEst.biasFloor));
 }
 
 static void resetState(const float zM)
@@ -200,10 +259,7 @@ static void predictState(altitudeState_t *state, const float accelWorldZ, const 
         }
     }
 
-    state->P[0][0] = MAX(state->P[0][0], sq(0.02f));
-    state->P[1][1] = MAX(state->P[1][1], sq(0.02f));
-    state->P[2][2] = MAX(state->P[2][2], sq(0.01f));
-
+    applyCovarianceFloors(state);
     constrainState(state);
 }
 
@@ -274,20 +330,56 @@ static float baroRate(const float baroM, const timeUs_t baroTimeUs)
     return altEst.stepBaroRate;
 }
 
-static bool fuseBaro(altitudeState_t *state, const float rawBaroM, const timeUs_t baroTimeUs)
+static float rampMultiplier(const float value, const float start, const float end, const float maxScale)
+{
+    if (maxScale <= 1.0f || value <= start) {
+        return 1.0f;
+    }
+
+    const float amount = constrainf((value - start) / MAX(0.001f, end - start), 0.0f, 1.0f);
+    return 1.0f + amount * (maxScale - 1.0f);
+}
+
+static float adaptiveBaroR(const altitudeEstimatorMeasurement_t *baro, const altitudeEstimatorInput_t *input)
 {
     const altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfig();
-    const float measuredZ = rawBaroM - altEst.baroDatumM - altEst.baroOffsetM;
-    float innov = measuredZ - state->z;
-    float rEff = sq(altEst.baroNoise);
+    float rEff = measurementVarianceM2(baro, altEst.baroNoise);
 
     if (cfg->alt_est_flags & ALT_EST_CONFIG_ADAPTIVE_R) {
         rEff *= constrainf(altEst.recoveryRMult, 1.0f, cfg->alt_est_recovery_r_scale_x10 * 0.1f);
     }
 
+    if ((cfg->alt_est_flags & ALT_EST_CONFIG_TILT_R) && input && input->haveTilt) {
+        const float cosTilt = constrainf(input->cosTilt, 0.0f, 1.0f);
+        if (cosTilt < altEst.tiltRStartCos && altEst.tiltRScale > 1.0f) {
+            const float amount = constrainf((altEst.tiltRStartCos - cosTilt) / MAX(0.001f, altEst.tiltRStartCos - altEst.tiltREndCos), 0.0f, 1.0f);
+            rEff *= 1.0f + amount * (altEst.tiltRScale - 1.0f);
+            altEst.status.flags |= ALT_EST_STATUS_TILT_R_INFLATED;
+        }
+    }
+
+    if ((cfg->alt_est_flags & ALT_EST_CONFIG_ACCEL_R) && input && input->haveAccel) {
+        const float accelRMultiplier = rampMultiplier(fabsf(input->accelWorldZ), altEst.accelRStart, altEst.accelREnd, altEst.accelRScale);
+        if (accelRMultiplier > 1.0f) {
+            rEff *= accelRMultiplier;
+            altEst.status.flags |= ALT_EST_STATUS_ACCEL_R_INFLATED;
+        }
+    }
+
+    return rEff;
+}
+
+static bool fuseBaro(altitudeState_t *state, const altitudeEstimatorMeasurement_t *baro, const altitudeEstimatorInput_t *input)
+{
+    const altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfig();
+    const float rawBaroM = metersFromCm(baro->valueCm);
+    const float measuredZ = rawBaroM - altEst.baroDatumM - altEst.baroOffsetM;
+    float innov = measuredZ - state->z;
+    float rEff = adaptiveBaroR(baro, input);
+
     float s = MAX(state->P[0][0] + rEff, altEst.innovVarianceFloor);
     float gate = altEst.gateSigma * sqrtf(s);
-    const float rate = baroRate(rawBaroM, baroTimeUs);
+    const float rate = baroRate(rawBaroM, baro->timeUs);
 
     altEst.status.innovationCm = cmFromMeters(innov);
     altEst.status.gateCm = cmFromMeters(gate);
@@ -339,7 +431,7 @@ static bool fuseBaro(altitudeState_t *state, const float rawBaroM, const timeUs_
     }
 
     if (forceFuse) {
-        rEff *= MAX(1.0f, altEst.recoveryRMult);
+        rEff = adaptiveBaroR(baro, input);
         s = MAX(state->P[0][0] + rEff, altEst.innovVarianceFloor);
         gate = altEst.gateSigma * sqrtf(s);
     }
@@ -374,6 +466,7 @@ static bool fuseBaro(altitudeState_t *state, const float rawBaroM, const timeUs_
         }
     }
 
+    applyCovarianceFloors(state);
     constrainState(state);
 
     altEst.status.flags |= ALT_EST_STATUS_BARO_FUSED;
@@ -432,9 +525,35 @@ static void updatePositionRate(const float dt)
     altEst.posRateA += dt * ((omega * omega * omega) * e - 3.0f * omega * altEst.posRateA - 3.0f * omega * omega * altEst.posRateV);
 }
 
-void altitudeEstimatorUpdate(timeUs_t nowUs, bool armed, bool haveBaro, float baroAltitudeCm, timeUs_t baroTimeUs, bool haveAccel, float accelWorldZ)
+void altitudeEstimatorUpdateWithMeasurements(timeUs_t nowUs, bool armed, const altitudeEstimatorMeasurement_t *measurements, uint8_t measurementCount, const altitudeEstimatorInput_t *input)
 {
     altitudeEstimatorUpdateConfig();
+
+    const altitudeEstimatorMeasurement_t *baro = NULL;
+    const bool haveAccel = input && input->haveAccel;
+    const float accelWorldZ = haveAccel ? input->accelWorldZ : 0.0f;
+
+    if (!measurements) {
+        measurementCount = 0;
+    }
+
+    for (uint8_t i = 0; i < measurementCount; i++) {
+        const altitudeEstimatorMeasurement_t *measurement = &measurements[i];
+        if (!isMeasurementValid(measurement)) {
+            continue;
+        }
+
+        if (measurement->source == ALT_EST_MEAS_SOURCE_BAROMETER && measurement->type == ALT_EST_MEAS_TYPE_ALTITUDE) {
+            if (!baro) {
+                baro = measurement;
+            }
+        }
+    }
+
+    const bool haveBaro = baro != NULL;
+    const float baroAltitudeCm = haveBaro ? baro->valueCm : 0.0f;
+    const timeUs_t baroTimeUs = haveBaro ? baro->timeUs : nowUs;
+
     altEst.status.flags = 0;
     altEst.status.timeUs = nowUs;
     altEst.status.baroAltitudeCm = haveBaro ? baroAltitudeCm : 0.0f;
@@ -447,11 +566,23 @@ void altitudeEstimatorUpdate(timeUs_t nowUs, bool armed, bool haveBaro, float ba
     if (armed) {
         altEst.status.flags |= ALT_EST_STATUS_ARMED;
     }
-    if (haveBaro) {
-        altEst.status.flags |= ALT_EST_STATUS_BARO_VALID;
+
+    for (uint8_t i = 0; i < measurementCount; i++) {
+        const altitudeEstimatorMeasurement_t *measurement = &measurements[i];
+        if (!isMeasurementValid(measurement)) {
+            continue;
+        }
+
+        if (measurement->source == ALT_EST_MEAS_SOURCE_BAROMETER && measurement->type == ALT_EST_MEAS_TYPE_ALTITUDE) {
+            altEst.status.flags |= ALT_EST_STATUS_BARO_VALID;
+        } else if (measurement->source == ALT_EST_MEAS_SOURCE_GPS && measurement->type == ALT_EST_MEAS_TYPE_ALTITUDE) {
+            altEst.status.flags |= ALT_EST_STATUS_GPS_ALT_VALID;
+        } else if (measurement->source == ALT_EST_MEAS_SOURCE_RANGEFINDER && measurement->type == ALT_EST_MEAS_TYPE_SURFACE_DISTANCE) {
+            altEst.status.flags |= ALT_EST_STATUS_RANGEFINDER_VALID;
+        }
     }
 
-    const float accel = haveAccel ? accelWorldZ : 0.0f;
+    const float accel = accelWorldZ;
     float dt = 0.01f;
     if (altEst.lastTimeUs != 0) {
         dt = constrainf(cmpTimeUs(nowUs, altEst.lastTimeUs) * 1e-6f, 0.001f, 0.05f);
@@ -494,7 +625,7 @@ void altitudeEstimatorUpdate(timeUs_t nowUs, bool armed, bool haveBaro, float ba
             : nowUs;
         const int historyIndex = findHistoryIndex(targetUs);
         if (historyIndex >= 0) {
-            if (fuseBaro(&altEst.history[historyIndex].state, metersFromCm(baroAltitudeCm), baroTimeUs)) {
+            if (fuseBaro(&altEst.history[historyIndex].state, baro, input)) {
                 replayFromHistory(historyIndex);
             }
         }
@@ -514,6 +645,33 @@ void altitudeEstimatorUpdate(timeUs_t nowUs, bool armed, bool haveBaro, float ba
     altEst.status.rejectStreak = altEst.rejectStreak;
     altEst.status.recoveryFrames = altEst.recoveryFrames;
     altEst.status.stepStreak = altEst.stepStreak;
+}
+
+void altitudeEstimatorUpdate(timeUs_t nowUs, bool armed, bool haveBaro, float baroAltitudeCm, timeUs_t baroTimeUs, bool haveAccel, float accelWorldZ)
+{
+    const altitudeEstimatorInput_t input = {
+        .haveAccel = haveAccel,
+        .accelWorldZ = accelWorldZ,
+        .haveTilt = false,
+        .cosTilt = 1.0f,
+    };
+
+    if (!haveBaro) {
+        altitudeEstimatorUpdateWithMeasurements(nowUs, armed, NULL, 0, &input);
+        return;
+    }
+
+    const altitudeEstimatorMeasurement_t baro = {
+        .timeUs = baroTimeUs,
+        .source = ALT_EST_MEAS_SOURCE_BAROMETER,
+        .type = ALT_EST_MEAS_TYPE_ALTITUDE,
+        .valueCm = baroAltitudeCm,
+        .varianceCm2 = 0.0f,
+        .quality = UINT8_MAX,
+        .flags = ALT_EST_MEAS_FLAG_VALID,
+    };
+
+    altitudeEstimatorUpdateWithMeasurements(nowUs, armed, &baro, 1, &input);
 }
 
 const altitudeEstimatorStatus_t *altitudeEstimatorGetStatus(void)

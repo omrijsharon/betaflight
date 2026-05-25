@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "port": 8790,
+  "publicBaseUrl": "http://127.0.0.1:8790",
+  "piBaseUrl": "http://omrijsharon.local:8080",
+  "codexAppServerUrl": "ws://127.0.0.1:4500",
+  "repoRoot": "C:\\Users\\tamipinhasi\\Documents\\repos\\betaflight",
+  "localLogDir": "althold/logs",
+  "modelName": "gpt-5.5",
+  "reasoningLabel": "Extra High",
+  "speed": "fast"
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Altitude logger field network manager
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=/opt/althold
+ExecStart=/usr/bin/python3 -m althold.pi_logger.field_network_manager --config /etc/althold/field_network.json daemon --interval-s 60
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

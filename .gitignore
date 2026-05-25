@@ -7,6 +7,8 @@
 *.uvgui.*
 *.swp
 *.save
+__pycache__/
+*.pyc
 .project
 .settings
 .cproject
@@ -58,4 +60,20 @@ eeprom.bin
 
 # config used for building targets
 /src/config
+
+# local field credentials and network secrets
+/althold/pi_logger/field_network.json
+/althold/pi_logger/*wifi*.json
+/althold/pi_logger/*credential*.json
+/althold/pi_logger/*credentials*.json
+/althold/pi_logger/*secret*.json
+/althold/pi_logger/*secrets*.json
+!/althold/pi_logger/*.example.json
+/althold/tuning_app/node_modules/
+/althold/tuning_app/dist/
+/althold/tuning_app/.state/
+/althold/tuning_app/*secret*.json
+/althold/tuning_app/*secrets*.json
+!/althold/tuning_app/*.example.json
+/althold/logs/
 

@@ -13,6 +13,22 @@ REJECT_FLAG = 1 << 3
 RECOVERY_FLAG = 1 << 4
 STEP_FLAG = 1 << 6
 
+STATUS_FLAGS = {
+    "armed": 1 << 0,
+    "baro_valid": 1 << 1,
+    "baro_fused": 1 << 2,
+    "baro_reject": REJECT_FLAG,
+    "recovery": RECOVERY_FLAG,
+    "reset": 1 << 5,
+    "baro_step": STEP_FLAG,
+    "history_miss": 1 << 7,
+    "bias_limit": 1 << 8,
+    "gps_alt_valid": 1 << 9,
+    "rangefinder_valid": 1 << 10,
+    "tilt_r_inflated": 1 << 11,
+    "accel_r_inflated": 1 << 12,
+}
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
@@ -43,6 +59,17 @@ def values(records: list[dict[str, Any]], name: str) -> list[float]:
 
 def count_flags(records: list[dict[str, Any]], flag: int) -> int:
     return sum(1 for record in records if int(record.get("status", {}).get("flags", 0)) & flag)
+
+
+def status_flag_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    return {name: count_flags(records, flag) for name, flag in STATUS_FLAGS.items()}
+
+
+def host_duration_s(records: list[dict[str, Any]]) -> float | None:
+    host_times = [int(record["host_time_ns"]) for record in records if "host_time_ns" in record]
+    if len(host_times) < 2:
+        return None
+    return (host_times[-1] - host_times[0]) / 1_000_000_000.0
 
 
 def stat_block(data: list[float]) -> dict[str, float | int | None]:
@@ -108,17 +135,30 @@ def analyze(path: Path) -> dict[str, Any]:
     records = load_jsonl(root / "telemetry.jsonl")
     events = load_jsonl(root / "events.jsonl")
     alt = values(records, "altitude_cm")
+    baro_alt = values(records, "baro_altitude_cm")
     vel = values(records, "velocity_cms")
     bias = values(records, "accel_bias_cms2")
+    accel = values(records, "accel_world_z_cms2")
     innov = values(records, "innovation_cm")
+    flags = [int(record.get("status", {}).get("flags", 0)) for record in records]
+    duration_s = host_duration_s(records)
 
     summary: dict[str, Any] = {
         "session": root.name,
         "sample_count": len(records),
+        "duration_s": duration_s,
+        "sample_rate_hz": ((len(records) - 1) / duration_s) if duration_s and len(records) > 1 else None,
         "event_count": len(events),
+        "status_flags_unique": sorted(set(flags)),
+        "status_flag_counts": status_flag_counts(records),
+        "baro_altitude_cm": stat_block(baro_alt),
         "innovation": stat_block(innov),
         "normalized_innovation": stat_block(normalized_innovation(records)),
+        "gate_cm": stat_block(values(records, "gate_cm")),
+        "r_eff_cm2": stat_block(values(records, "r_eff_cm2")),
+        "s_cm2": stat_block(values(records, "s_cm2")),
         "velocity_cms": stat_block(vel),
+        "accel_world_z_cms2": stat_block(accel),
         "accel_bias_cms2": stat_block(bias),
         "reject_count": count_flags(records, REJECT_FLAG),
         "recovery_count": count_flags(records, RECOVERY_FLAG),
@@ -131,6 +171,12 @@ def analyze(path: Path) -> dict[str, Any]:
     else:
         summary["altitude_drift_cm"] = None
         summary["altitude_range_cm"] = None
+    if baro_alt:
+        summary["baro_altitude_drift_cm"] = baro_alt[-1] - baro_alt[0]
+        summary["baro_altitude_range_cm"] = max(baro_alt) - min(baro_alt)
+    else:
+        summary["baro_altitude_drift_cm"] = None
+        summary["baro_altitude_range_cm"] = None
     return summary
 
 

@@ -1649,6 +1649,15 @@ static bool blackboxWriteSysinfo(void)
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_OFFSET_ALPHA_X1000, "%d", altitudeEstimatorConfig()->alt_est_step_offset_alpha_x1000);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_STEP_OFFSET_LIMIT_CM, "%d",    altitudeEstimatorConfig()->alt_est_step_offset_limit_cm);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_HEIGHT_RATE_LPF_HZ_X100, "%d", altitudeEstimatorConfig()->alt_est_height_rate_lpf_hz_x100);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_PZ_FLOOR_CM, "%d",             altitudeEstimatorConfig()->alt_est_pz_floor_cm);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_PV_FLOOR_CMS, "%d",            altitudeEstimatorConfig()->alt_est_pv_floor_cms);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_PBA_FLOOR_CMS2, "%d",          altitudeEstimatorConfig()->alt_est_pba_floor_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_TILT_R_START_DEG, "%d",        altitudeEstimatorConfig()->alt_est_tilt_r_start_deg);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_TILT_R_END_DEG, "%d",          altitudeEstimatorConfig()->alt_est_tilt_r_end_deg);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_TILT_R_SCALE_X10, "%d",        altitudeEstimatorConfig()->alt_est_tilt_r_scale_x10);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_R_START_CMS2, "%d",      altitudeEstimatorConfig()->alt_est_accel_r_start_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_R_END_CMS2, "%d",        altitudeEstimatorConfig()->alt_est_accel_r_end_cms2);
+        BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_ALT_EST_ACCEL_R_SCALE_X10, "%d",       altitudeEstimatorConfig()->alt_est_accel_r_scale_x10);
 #ifdef USE_BARO_ALTHOLD
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KZ_X100, "%d",       positionConfig()->alt_hold_kz_x100);
         BLACKBOX_PRINT_HEADER_LINE(PARAM_NAME_POSITION_ALT_HOLD_KPV, "%d",           positionConfig()->alt_hold_kpv);

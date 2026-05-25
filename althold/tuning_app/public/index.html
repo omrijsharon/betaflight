@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Altitude EKF Tuning</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Altitude EKF Tuning</h1>
+      <p id="sessionLine">Checking session</p>
+    </div>
+    <div class="status-grid" id="statusGrid"></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="params">Parameters</button>
+    <button class="tab" data-tab="recording">Recording</button>
+    <button class="tab" data-tab="download">Download</button>
+    <button class="tab" data-tab="plot">Plot</button>
+    <button class="tab" data-tab="analysis">Analysis</button>
+  </nav>
+
+  <main>
+    <section id="params" class="panel active">
+      <div class="toolbar">
+        <button id="loadConfig">Load from FC</button>
+        <button id="applyRecommendation">Apply suggested changes</button>
+        <button id="saveConfig">Save to EEPROM</button>
+        <button id="rebootFc">Reboot FC</button>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h2>Current Parameters</h2>
+          <pre id="configView">{}</pre>
+        </div>
+        <div>
+          <h2>Pending Suggestion</h2>
+          <div id="pendingView" class="diff-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="recording" class="panel">
+      <div class="toolbar">
+        <button id="recordingToggle" class="icon-button record-toggle" title="Start recording" aria-label="Start recording">
+          <span class="record-glyph circle" aria-hidden="true"></span>
+          <span class="sr-only">Start recording</span>
+        </button>
+      </div>
+      <h2>Recording State</h2>
+      <pre id="recordingView">{}</pre>
+    </section>
+
+    <section id="download" class="panel">
+      <div class="toolbar">
+        <input id="sessionIdInput" placeholder="session id">
+        <button id="refreshSessions">Refresh Sessions</button>
+        <button id="downloadSession">Download Session</button>
+        <button id="downloadAllSessions">Download All</button>
+      </div>
+      <h2>Pi Sessions</h2>
+      <div id="sessionsView" class="session-list"></div>
+      <h2>Local Downloads</h2>
+      <div id="localSessionsView" class="session-list"></div>
+      <h2>Download</h2>
+      <pre id="downloadView">{}</pre>
+    </section>
+
+    <section id="plot" class="panel">
+      <div class="toolbar">
+        <select id="plotSessionSelect"></select>
+        <button id="refreshPlotSessions">Refresh Sessions</button>
+        <button id="loadPlot">Load Plot</button>
+      </div>
+      <div id="plotSummary" class="plot-summary"></div>
+      <div id="plotFields" class="field-list"></div>
+      <div class="plot-frame">
+        <canvas id="plotCanvas" width="1100" height="520"></canvas>
+      </div>
+      <pre id="plotView">{}</pre>
+    </section>
+
+    <section id="analysis" class="panel">
+      <div class="toolbar">
+        <button id="refreshAnalysisSessions">Refresh Sessions</button>
+        <button id="runAnalysis">Run Analysis</button>
+        <button id="sendRecommendation">Send Suggestion to Pi</button>
+      </div>
+      <h2>Sessions to Analyze</h2>
+      <div id="analysisSessionsView" class="session-list"></div>
+      <h2>Codex Chat</h2>
+      <div id="codexChat" class="chat-view"></div>
+      <details class="debug-details">
+        <summary>Raw Codex Events</summary>
+        <pre id="codexRawView"></pre>
+      </details>
+      <h2>Recommendation</h2>
+      <pre id="recommendationView">{}</pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

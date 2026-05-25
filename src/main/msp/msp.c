@@ -1360,6 +1360,15 @@ case MSP_NAME:
             sbufWriteU16(dst, cfg->alt_est_step_offset_alpha_x1000);
             sbufWriteU16(dst, cfg->alt_est_step_offset_limit_cm);
             sbufWriteU16(dst, cfg->alt_est_height_rate_lpf_hz_x100);
+            sbufWriteU16(dst, cfg->alt_est_pz_floor_cm);
+            sbufWriteU16(dst, cfg->alt_est_pv_floor_cms);
+            sbufWriteU16(dst, cfg->alt_est_pba_floor_cms2);
+            sbufWriteU8(dst, cfg->alt_est_tilt_r_start_deg);
+            sbufWriteU8(dst, cfg->alt_est_tilt_r_end_deg);
+            sbufWriteU16(dst, cfg->alt_est_tilt_r_scale_x10);
+            sbufWriteU16(dst, cfg->alt_est_accel_r_start_cms2);
+            sbufWriteU16(dst, cfg->alt_est_accel_r_end_cms2);
+            sbufWriteU16(dst, cfg->alt_est_accel_r_scale_x10);
         }
         break;
 
@@ -4237,6 +4246,15 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
             cfg->alt_est_step_offset_alpha_x1000 = constrain(sbufReadU16(src), 0, 1000);
             cfg->alt_est_step_offset_limit_cm = constrain(sbufReadU16(src), 0, 10000);
             cfg->alt_est_height_rate_lpf_hz_x100 = constrain(sbufReadU16(src), 5, 5000);
+            cfg->alt_est_pz_floor_cm = constrain(sbufReadU16(src), 1, 1000);
+            cfg->alt_est_pv_floor_cms = constrain(sbufReadU16(src), 1, 1000);
+            cfg->alt_est_pba_floor_cms2 = constrain(sbufReadU16(src), 1, 1000);
+            cfg->alt_est_tilt_r_start_deg = constrain(sbufReadU8(src), 0, 89);
+            cfg->alt_est_tilt_r_end_deg = constrain(sbufReadU8(src), 1, 90);
+            cfg->alt_est_tilt_r_scale_x10 = constrain(sbufReadU16(src), 10, 1000);
+            cfg->alt_est_accel_r_start_cms2 = constrain(sbufReadU16(src), 0, 5000);
+            cfg->alt_est_accel_r_end_cms2 = constrain(sbufReadU16(src), 1, 5000);
+            cfg->alt_est_accel_r_scale_x10 = constrain(sbufReadU16(src), 10, 1000);
             altitudeEstimatorUpdateConfig();
         }
         break;

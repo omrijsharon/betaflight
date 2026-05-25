@@ -1,0 +1,38 @@
+{
+  "wifi": {
+    "interface": "wlan0",
+    "country": "IL",
+    "hotspot": {
+      "ssid": "PHONE_HOTSPOT_SSID",
+      "password": "PHONE_HOTSPOT_PASSWORD",
+      "priority": 100
+    },
+    "home": {
+      "ssid": "HOME_WIFI_SSID",
+      "password": "HOME_WIFI_PASSWORD",
+      "priority": 50
+    },
+    "fallback_ap": {
+      "ssid": "ALTHOLD_PI",
+      "password": "CHANGE_ME_MIN_8_CHARS",
+      "ip_address": "10.42.0.1/24",
+      "channel": 6
+    }
+  },
+  "tailscale": {
+    "hostname": "omrijsharon-pi",
+    "auto_up_policy": "hotspot_only",
+    "allow_manual_home_wifi_test": true,
+    "accept_routes": false,
+    "ssh": false
+  },
+  "logger": {
+    "mode": "fake",
+    "serial_port": "/dev/serial0",
+    "baudrate": 115200,
+    "poll_hz": 50,
+    "site_host": "0.0.0.0",
+    "site_port": 8080,
+    "log_root": "/opt/althold/logs/pi_sessions"
+  }
+}
