@@ -158,8 +158,8 @@ Rollout note (2026-11-06): the installed native Pi logger/tuner still expects
 configuration v1 and is intentionally unchanged while the user flies the old
 firmware. Its configuration parser, per-flight snapshots and exporter must be
 updated to support v2 before using it with this firmware. The commands below
-describe the deployed v1 tools; they cannot yet tune this new field. No target
-HEX was built or flashed for the configurable-band change.
+describe the deployed v1 tools; they cannot yet tune this new field. The new target
+HEX described below includes configuration v2; it has not been flashed.
 
 Modes: 0 OFF, 1 WAIT_CENTER, 2 HOLD (including braking), 3 SPEED, 4 LOCKED.
 Reasons: 0 OK, 1 SWITCH, 2 CONFLICT, 3 ESTIMATE, 4 ENTRY, 5 TIMEOUT, 6 WAIT_ANGLE.
@@ -241,11 +241,24 @@ The separate 524-byte FLASH region is unchanged. FLASH1 is 42.31% of 992 KiB;
 RAM is 48.25% of 192 KiB. No heap allocations or additional estimator history.
 These are linker region sizes, not measured worst-case stack or task timing.
 
-HEX is local/ignored: obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG.hex.
-This is the earlier build; field Blackbox logs subsequently confirmed revision
-62e7fa0 was flown. The center-band updates and ANGLE fallback fix have passed host
-tests but have not been built into a new target HEX or flashed. Do not use this
-older HEX expecting the mode fix. The source base remains 4.5.2 with release label 4.5.3.
+The table above describes the original 62e7fa0 build confirmed in field Blackbox
+logs. On 2026-11-06, source revision **85fe7d3** was rebuilt from a clean committed
+snapshot with the same cloud flags, USE_MAG and USE_ALTITUDE_CONTROL. It includes
+the configurable center band and the ANGLE fallback fix. Target configuration is
+5a85a4e; compiler remains ARM GCC 10.3.1. FLASH1 is now **429,884 B (42.32%)** and
+RAM **94,872 B (48.25%)**, +64 B flash/+8 B RAM over the original controller build.
+The separate FLASH region remains 524 B.
+
+Current local/ignored HEX:
+`obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG_85fe7d3.hex`.
+The familiar `obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG.hex` is an identical copy;
+the earlier file is preserved with suffix `_62e7fa0.hex`.
+SHA-256: `c6fa7cbe219a5d2137f3a517c19d6119786afff180a464c4e5e6e2a49d413403`.
+Adjacent .sha256, .build.json, .flags.txt, ELF and map files record local provenance.
+All 26,913 Intel HEX records passed checksum validation, addresses/vectors were
+checked, and decoded HEX bytes matched the ELF-derived binary. Embedded revision,
+board, release, altitude settings and MAG drivers were verified. No FC was flashed
+or accessed for this build. The source base remains 4.5.2 with release label 4.5.3.
 
 The native Pi changes are in a separate, already dirty checkout and were not
 committed with firmware. A reviewed source-only backup is:
