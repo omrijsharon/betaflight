@@ -11,16 +11,36 @@ import pytest
 from althold.analysis.analyze_altitude_log import analyze
 from althold.desktop_tools.field_helper import archive_session, latest_bundle, main as desktop_main
 from althold.pi_logger import field_network_manager
-from althold.pi_logger.msp_client import DEFAULT_CONFIG, FakeMspClient, encode_config, parse_config, parse_msp_status
+from althold.pi_logger.msp_client import DEFAULT_CONFIG, FakeMspClient, encode_config, parse_config, parse_status, parse_msp_status
 
 
 def test_config_payload_round_trip() -> None:
     payload = encode_config(DEFAULT_CONFIG)
     parsed = parse_config(payload)
-    assert parsed["version"] == 2
+    assert parsed == DEFAULT_CONFIG
+    assert len(payload) == 16
+    assert parsed["version"] == 3
     assert parsed["baro_delay_ms"] == 60
-    assert parsed["tilt_r_scale_x10"] == 50
-    assert parsed["accel_r_end_cms2"] == 800
+    assert parsed["flags"] == 1
+    assert parsed["history_ms"] == 250
+
+
+def test_estimator_protocol_rejects_obsolete_or_malformed_payloads() -> None:
+    payload = encode_config(DEFAULT_CONFIG)
+    for invalid in [payload[:i] for i in range(len(payload))] + [payload + b"0", bytes([2]) + payload[1:]]:
+        with pytest.raises(ValueError):
+            parse_config(invalid)
+    for config in [{"version": 2}, {"recovery_start_frames": 30}]:
+        with pytest.raises(ValueError):
+            encode_config(config)
+    status = struct.pack("<BII10i2H", 3, 12345, 7, 1, -2, 3, -4, 5, -6, 7, 8, 9, 10, 60, 12)
+    parsed = parse_status(status)
+    assert parsed["velocity_cms"] == -2 and parsed["accel_world_z_cms2"] == -4
+    assert parsed["baro_age_ms"] == 10 and parsed["configured_delay_ms"] == 60
+    assert parsed["reject_streak"] == 12 and "baro_offset_cm" not in parsed
+    for invalid in [status[:i] for i in range(len(status))] + [status + b"0", bytes([2]) + status[1:]]:
+        with pytest.raises(ValueError):
+            parse_status(invalid)
 
 
 def test_pi_logger_endpoints_and_session(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@
 #pragma once
 
 #include "pg/pg.h"
+#include "common/time.h"
 #include "drivers/barometer/barometer.h"
 
 typedef enum {
@@ -57,6 +58,8 @@ PG_DECLARE(barometerConfig_t, barometerConfig);
 typedef struct baro_s {
     baroDev_t dev;
     float altitude;
+    uint32_t sampleNumber;
+    timeUs_t sampleTimeUs; // Receipt time of the latest calibrated pressure sample.
     float altitude_prev;
     float altitude_velocity;
     int32_t temperature;                    // Use temperature for telemetry

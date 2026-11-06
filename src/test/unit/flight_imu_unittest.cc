@@ -391,6 +391,7 @@ extern "C" {
 
     gyro_t gyro;
     acc_t acc;
+    baro_t baro;
     mag_t mag;
 
     gpsSolutionData_t gpsSol;
@@ -421,11 +422,13 @@ extern "C" {
 
     bool compassIsHealthy(void) { return true; }
     bool baroIsCalibrated(void) { return true; }
+    bool accIsCalibrationComplete(void) { return true; }
     void performBaroCalibrationCycle(void) {}
     float baroCalculateAltitude(void) { return 0; }
     bool gyroGetAccumulationAverage(float *) { return false; }
     bool accGetAccumulationAverage(float *) { return false; }
     void mixerSetThrottleAngleCorrection(int) {};
+    void mixerSetThrottleAltitudeCorrection(int) {}
     bool gpsRescueIsRunning(void) { return false; }
     bool isFixedWing(void) { return false; }
     void pinioBoxTaskControl(void) {}

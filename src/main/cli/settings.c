@@ -1780,52 +1780,15 @@ const clivalue_t valueTable[] = {
     { "altitude_d_lpf",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 1000 }, PG_POSITION, offsetof(positionConfig_t, altitude_d_lpf) },
 
 // PG_ALTITUDE_ESTIMATOR_CONFIG
-    { "alt_est_flags",                 VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 65535 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_flags) },
+    { "alt_est_flags",                 VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_flags) },
     { "alt_est_accel_noise_cms2",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_noise_cms2) },
     { "alt_est_accel_bias_noise_cms2", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_bias_noise_cms2) },
     { "alt_est_accel_bias_limit_cms2", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 5000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_bias_limit_cms2) },
     { "alt_est_baro_noise_cm",         VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 10000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_baro_noise_cm) },
-    { "alt_est_baro_delay_ms",         VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_baro_delay_ms) },
-    { "alt_est_innov_var_floor_cm2",   VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 65535 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_innov_var_floor_cm2) },
-    { "alt_est_history_ms",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 20, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_history_ms) },
+    { "alt_est_baro_delay_ms",         VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 250 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_baro_delay_ms) },
+    { "alt_est_history_ms",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 20, 250 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_history_ms) },
     { "alt_est_gate_sigma_x10",        VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 5, 100 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_gate_sigma_x10) },
-    { "alt_est_recovery_start_frames", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_recovery_start_frames) },
-    { "alt_est_recovery_r_scale_x10",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 10000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_recovery_r_scale_x10) },
-    { "alt_est_recovery_decay_tc_frames", VAR_UINT8 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 255 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_recovery_decay_tc_frames) },
-    { "alt_est_step_innov_thresh_cm",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_innov_thresh_cm) },
-    { "alt_est_step_rate_thresh_cms",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_rate_thresh_cms) },
-    { "alt_est_step_rate_filter_tau_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 5000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_rate_filter_tau_ms) },
-    { "alt_est_step_streak_frames",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 255 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_streak_frames) },
-    { "alt_est_step_offset_alpha_x1000", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_offset_alpha_x1000) },
-    { "alt_est_step_offset_limit_cm",  VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 10000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_step_offset_limit_cm) },
-    { "alt_est_height_rate_lpf_hz_x100", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 5, 5000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_height_rate_lpf_hz_x100) },
-    { "alt_est_pz_floor_cm",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_pz_floor_cm) },
-    { "alt_est_pv_floor_cms",          VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_pv_floor_cms) },
-    { "alt_est_pba_floor_cms2",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_pba_floor_cms2) },
-    { "alt_est_tilt_r_start_deg",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 89 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_tilt_r_start_deg) },
-    { "alt_est_tilt_r_end_deg",        VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, 90 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_tilt_r_end_deg) },
-    { "alt_est_tilt_r_scale_x10",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_tilt_r_scale_x10) },
-    { "alt_est_accel_r_start_cms2",    VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 5000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_r_start_cms2) },
-    { "alt_est_accel_r_end_cms2",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 5000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_r_end_cms2) },
-    { "alt_est_accel_r_scale_x10",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_r_scale_x10) },
 
-    // EKF tuning (centi-scaled / x10 where noted)
-    { "ekf_qv_centi",            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 300 },  PG_POSITION, offsetof(positionConfig_t, ekf_qv_centi) },         // (Qv = (val/100)^2)
-    { "ekf_qba_centi",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1,  50 },  PG_POSITION, offsetof(positionConfig_t, ekf_qba_centi) },        // (Qba per sec = (val/100)^2)
-    { "ekf_qbb_centi",           VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1, 100 },  PG_POSITION, offsetof(positionConfig_t, ekf_qbb_centi) },        // (Qbb per sec = (val/100)^2)
-    { "ekf_r_centi",             VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 100 },  PG_POSITION, offsetof(positionConfig_t, ekf_r_centi) },           // (R = (val/100)^2)
-    { "ekf_gate_sigma_x10",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10,  50 },  PG_POSITION, offsetof(positionConfig_t, ekf_gate_sigma_x10) },    // sigma = val/10
-    { "ekf_enable_adapt_r",      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {  0,   1 },  PG_POSITION, offsetof(positionConfig_t, ekf_enable_adapt_r) },
-    { "ekf_s_min_m2_x1000",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   1, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_s_min_m2_x1000) },    // S_min = val/1000 [m^2]
-    { "ekf_reject_recovery_start_frames", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   1,  500 }, PG_POSITION, offsetof(positionConfig_t, ekf_reject_recovery_start_frames) },
-    { "ekf_recovery_decay_tc_frames",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {   1,  255 }, PG_POSITION, offsetof(positionConfig_t, ekf_recovery_decay_tc_frames) },
-    { "ekf_recovery_r_scale_x10",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  10, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_recovery_r_scale_x10) }, // = val/10
-    { "ekf_step_innov_thresh_cm",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_innov_thresh_cm) },
-    { "ekf_step_rate_thresh_cms",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_rate_thresh_cms) },
-    { "ekf_step_rate_filter_tau_ms",     VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_rate_filter_tau_ms) },
-    { "ekf_step_streak_frames",          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = {   1,  255 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_streak_frames) },
-    { "ekf_step_bb_alpha_x1000",         VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 1000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_bb_alpha_x1000) },
-    { "ekf_step_bb_max_adjust_cm",       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {   0, 5000 }, PG_POSITION, offsetof(positionConfig_t, ekf_step_bb_max_adjust_cm) },
     // Altitude hold tuning (BARO_MODE)
 #ifdef USE_BARO_ALTHOLD
     { "alt_hold_kz_x100",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = {  1, 300 },  PG_POSITION, offsetof(positionConfig_t, alt_hold_kz_x100) },       // kz = val/100 [1/s]

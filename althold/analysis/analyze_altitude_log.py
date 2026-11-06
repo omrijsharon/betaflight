@@ -10,23 +10,19 @@ from typing import Any
 
 
 REJECT_FLAG = 1 << 3
-RECOVERY_FLAG = 1 << 4
-STEP_FLAG = 1 << 6
 
 STATUS_FLAGS = {
     "armed": 1 << 0,
     "baro_valid": 1 << 1,
     "baro_fused": 1 << 2,
     "baro_reject": REJECT_FLAG,
-    "recovery": RECOVERY_FLAG,
     "reset": 1 << 5,
-    "baro_step": STEP_FLAG,
     "history_miss": 1 << 7,
     "bias_limit": 1 << 8,
-    "gps_alt_valid": 1 << 9,
-    "rangefinder_valid": 1 << 10,
-    "tilt_r_inflated": 1 << 11,
-    "accel_r_inflated": 1 << 12,
+    "bad_time": 1 << 13,
+    "stale": 1 << 14,
+    "invalid_input": 1 << 15,
+    "no_datum": 1 << 16,
 }
 
 
@@ -161,8 +157,6 @@ def analyze(path: Path) -> dict[str, Any]:
         "accel_world_z_cms2": stat_block(accel),
         "accel_bias_cms2": stat_block(bias),
         "reject_count": count_flags(records, REJECT_FLAG),
-        "recovery_count": count_flags(records, RECOVERY_FLAG),
-        "step_count": count_flags(records, STEP_FLAG),
         "baro_delay_correlation": estimate_baro_delay(records),
     }
     if alt:

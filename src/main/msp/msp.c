@@ -1347,28 +1347,8 @@ case MSP_NAME:
             sbufWriteU16(dst, cfg->alt_est_accel_bias_limit_cms2);
             sbufWriteU16(dst, cfg->alt_est_baro_noise_cm);
             sbufWriteU16(dst, cfg->alt_est_baro_delay_ms);
-            sbufWriteU16(dst, cfg->alt_est_innov_var_floor_cm2);
             sbufWriteU16(dst, cfg->alt_est_history_ms);
             sbufWriteU8(dst, cfg->alt_est_gate_sigma_x10);
-            sbufWriteU16(dst, cfg->alt_est_recovery_start_frames);
-            sbufWriteU16(dst, cfg->alt_est_recovery_r_scale_x10);
-            sbufWriteU8(dst, cfg->alt_est_recovery_decay_tc_frames);
-            sbufWriteU16(dst, cfg->alt_est_step_innov_thresh_cm);
-            sbufWriteU16(dst, cfg->alt_est_step_rate_thresh_cms);
-            sbufWriteU16(dst, cfg->alt_est_step_rate_filter_tau_ms);
-            sbufWriteU8(dst, cfg->alt_est_step_streak_frames);
-            sbufWriteU16(dst, cfg->alt_est_step_offset_alpha_x1000);
-            sbufWriteU16(dst, cfg->alt_est_step_offset_limit_cm);
-            sbufWriteU16(dst, cfg->alt_est_height_rate_lpf_hz_x100);
-            sbufWriteU16(dst, cfg->alt_est_pz_floor_cm);
-            sbufWriteU16(dst, cfg->alt_est_pv_floor_cms);
-            sbufWriteU16(dst, cfg->alt_est_pba_floor_cms2);
-            sbufWriteU8(dst, cfg->alt_est_tilt_r_start_deg);
-            sbufWriteU8(dst, cfg->alt_est_tilt_r_end_deg);
-            sbufWriteU16(dst, cfg->alt_est_tilt_r_scale_x10);
-            sbufWriteU16(dst, cfg->alt_est_accel_r_start_cms2);
-            sbufWriteU16(dst, cfg->alt_est_accel_r_end_cms2);
-            sbufWriteU16(dst, cfg->alt_est_accel_r_scale_x10);
         }
         break;
 
@@ -1380,7 +1360,6 @@ case MSP_NAME:
             sbufWriteU32(dst, status->flags);
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->altitudeCm));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->velocityCms));
-            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->positionRateCms));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroAltitudeCm));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->accelWorldZCms2));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->accelBiasCms2));
@@ -1388,12 +1367,9 @@ case MSP_NAME:
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->gateCm));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->rEffCm2));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->sCm2));
-            sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroOffsetCm));
             sbufWriteU32(dst, (uint32_t)(int32_t)lrintf(status->baroAgeMs));
             sbufWriteU16(dst, (uint16_t)constrain(lrintf(status->configuredDelayMs), 0, UINT16_MAX));
             sbufWriteU16(dst, status->rejectStreak);
-            sbufWriteU16(dst, status->recoveryFrames);
-            sbufWriteU16(dst, status->stepStreak);
         }
         break;
 
@@ -1451,30 +1427,6 @@ case MSP_NAME:
             sbufWriteU8(dst, currentPidProfile->pid[i].P);
             sbufWriteU8(dst, currentPidProfile->pid[i].I);
             sbufWriteU8(dst, currentPidProfile->pid[i].D);
-        }
-        break;
-
-    case MSP_Z_EKF_CONFIG:
-        {
-            const positionConfig_t *pcfg = positionConfig();
-            sbufWriteU16(dst, pcfg->ekf_qv_centi);
-            sbufWriteU16(dst, pcfg->ekf_qba_centi);
-            sbufWriteU16(dst, pcfg->ekf_qbb_centi);
-            sbufWriteU16(dst, pcfg->ekf_r_centi);
-            sbufWriteU8(dst, pcfg->ekf_gate_sigma_x10);
-            sbufWriteU8(dst, pcfg->ekf_enable_adapt_r);
-
-            // Additional robustness tuning (appended; older clients may ignore extra bytes)
-            sbufWriteU16(dst, pcfg->ekf_s_min_m2_x1000);
-            sbufWriteU16(dst, pcfg->ekf_reject_recovery_start_frames);
-            sbufWriteU8(dst, pcfg->ekf_recovery_decay_tc_frames);
-            sbufWriteU16(dst, pcfg->ekf_recovery_r_scale_x10);
-            sbufWriteU16(dst, pcfg->ekf_step_innov_thresh_cm);
-            sbufWriteU16(dst, pcfg->ekf_step_rate_thresh_cms);
-            sbufWriteU16(dst, pcfg->ekf_step_rate_filter_tau_ms);
-            sbufWriteU8(dst, pcfg->ekf_step_streak_frames);
-            sbufWriteU16(dst, pcfg->ekf_step_bb_alpha_x1000);
-            sbufWriteU16(dst, pcfg->ekf_step_bb_max_adjust_cm);
         }
         break;
 
@@ -2845,51 +2797,6 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
         pidInitConfig(currentPidProfile);
         break;
 
-    case MSP_SET_Z_EKF_CONFIG:
-        {
-            positionConfig_t *pcfg = positionConfigMutable();
-            pcfg->ekf_qv_centi = constrain(sbufReadU16(src), 10, 300);
-            pcfg->ekf_qba_centi = constrain(sbufReadU16(src), 1, 50);
-            pcfg->ekf_qbb_centi = constrain(sbufReadU16(src), 1, 100);
-            pcfg->ekf_r_centi = constrain(sbufReadU16(src), 10, 100);
-            pcfg->ekf_gate_sigma_x10 = constrain(sbufReadU8(src), 10, 50);
-            pcfg->ekf_enable_adapt_r = constrain(sbufReadU8(src), 0, 1);
-
-            // Backward compatible decode of appended fields (when present)
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_s_min_m2_x1000 = constrain(sbufReadU16(src), 1, 1000);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_reject_recovery_start_frames = constrain(sbufReadU16(src), 1, 500);
-            }
-            if (sbufBytesRemaining(src) >= 1) {
-                pcfg->ekf_recovery_decay_tc_frames = constrain(sbufReadU8(src), 1, 255);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_recovery_r_scale_x10 = constrain(sbufReadU16(src), 10, 5000);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_step_innov_thresh_cm = constrain(sbufReadU16(src), 0, 1000);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_step_rate_thresh_cms = constrain(sbufReadU16(src), 0, 5000);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_step_rate_filter_tau_ms = constrain(sbufReadU16(src), 0, 5000);
-            }
-            if (sbufBytesRemaining(src) >= 1) {
-                pcfg->ekf_step_streak_frames = constrain(sbufReadU8(src), 1, 255);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_step_bb_alpha_x1000 = constrain(sbufReadU16(src), 0, 1000);
-            }
-            if (sbufBytesRemaining(src) >= 2) {
-                pcfg->ekf_step_bb_max_adjust_cm = constrain(sbufReadU16(src), 0, 5000);
-            }
-            positionUpdateAltEKFTunables();
-        }
-        break;
-
 #ifdef USE_BARO_ALTHOLD
     case MSP_SET_BARO_ALTHOLD_CONFIG:
         {
@@ -4222,39 +4129,19 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 
     case MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG:
         {
-            if (sbufReadU8(src) != ALTITUDE_ESTIMATOR_VERSION) {
+            if (sbufBytesRemaining(src) != ALTITUDE_ESTIMATOR_CONFIG_PAYLOAD_SIZE || sbufReadU8(src) != ALTITUDE_ESTIMATOR_VERSION) {
                 return MSP_RESULT_ERROR;
             }
 
             altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-            cfg->alt_est_flags = sbufReadU16(src);
+            cfg->alt_est_flags = sbufReadU16(src) & ALT_EST_CONFIG_DELAYED_FUSION;
             cfg->alt_est_accel_noise_cms2 = constrain(sbufReadU16(src), 1, 1000);
             cfg->alt_est_accel_bias_noise_cms2 = constrain(sbufReadU16(src), 0, 1000);
             cfg->alt_est_accel_bias_limit_cms2 = constrain(sbufReadU16(src), 1, 5000);
             cfg->alt_est_baro_noise_cm = constrain(sbufReadU16(src), 1, 10000);
-            cfg->alt_est_baro_delay_ms = constrain(sbufReadU16(src), 0, 1000);
-            cfg->alt_est_innov_var_floor_cm2 = constrain(sbufReadU16(src), 1, 100000);
-            cfg->alt_est_history_ms = constrain(sbufReadU16(src), 20, 1000);
+            cfg->alt_est_baro_delay_ms = constrain(sbufReadU16(src), 0, 250);
+            cfg->alt_est_history_ms = constrain(sbufReadU16(src), 20, 250);
             cfg->alt_est_gate_sigma_x10 = constrain(sbufReadU8(src), 5, 100);
-            cfg->alt_est_recovery_start_frames = constrain(sbufReadU16(src), 1, 1000);
-            cfg->alt_est_recovery_r_scale_x10 = constrain(sbufReadU16(src), 10, 10000);
-            cfg->alt_est_recovery_decay_tc_frames = constrain(sbufReadU8(src), 1, 255);
-            cfg->alt_est_step_innov_thresh_cm = constrain(sbufReadU16(src), 0, 10000);
-            cfg->alt_est_step_rate_thresh_cms = constrain(sbufReadU16(src), 0, 10000);
-            cfg->alt_est_step_rate_filter_tau_ms = constrain(sbufReadU16(src), 0, 5000);
-            cfg->alt_est_step_streak_frames = constrain(sbufReadU8(src), 1, 255);
-            cfg->alt_est_step_offset_alpha_x1000 = constrain(sbufReadU16(src), 0, 1000);
-            cfg->alt_est_step_offset_limit_cm = constrain(sbufReadU16(src), 0, 10000);
-            cfg->alt_est_height_rate_lpf_hz_x100 = constrain(sbufReadU16(src), 5, 5000);
-            cfg->alt_est_pz_floor_cm = constrain(sbufReadU16(src), 1, 1000);
-            cfg->alt_est_pv_floor_cms = constrain(sbufReadU16(src), 1, 1000);
-            cfg->alt_est_pba_floor_cms2 = constrain(sbufReadU16(src), 1, 1000);
-            cfg->alt_est_tilt_r_start_deg = constrain(sbufReadU8(src), 0, 89);
-            cfg->alt_est_tilt_r_end_deg = constrain(sbufReadU8(src), 1, 90);
-            cfg->alt_est_tilt_r_scale_x10 = constrain(sbufReadU16(src), 10, 1000);
-            cfg->alt_est_accel_r_start_cms2 = constrain(sbufReadU16(src), 0, 5000);
-            cfg->alt_est_accel_r_end_cms2 = constrain(sbufReadU16(src), 1, 5000);
-            cfg->alt_est_accel_r_scale_x10 = constrain(sbufReadU16(src), 10, 1000);
             altitudeEstimatorUpdateConfig();
         }
         break;

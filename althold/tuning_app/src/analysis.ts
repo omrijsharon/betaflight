@@ -55,7 +55,7 @@ export function buildAnalysisPrompt(input: {
   sourceThreadId: string;
 }): string {
   return [
-    "Analyze this altitude estimator flight-log session and recommend EKF tuning changes.",
+    "Analyze this altitude estimator flight-log session and recommend linear Kalman filter tuning changes.",
     "",
     `Session id: ${input.sessionId}`,
     `Session directory: ${input.sessionDir}`,
@@ -90,7 +90,7 @@ export function buildMultiSessionAnalysisPrompt(input: {
     `  Summary CSV: ${session.csvPath}`
   ]);
   return [
-    "Analyze these altitude estimator flight-log sessions together and recommend EKF tuning changes.",
+    "Analyze these altitude estimator flight-log sessions together and recommend linear Kalman filter tuning changes.",
     "",
     `Analysis run id: ${input.runId}`,
     `Analysis run directory: ${input.runDir}`,

@@ -26,7 +26,6 @@ const DEFAULT_PLOT_FIELDS = [
   'status.altitude_cm',
   'status.baro_altitude_cm',
   'status.velocity_cms',
-  'status.position_rate_cms',
   'status.accel_world_z_cms2',
   'status.accel_bias_cms2',
   'status.innovation_cm'

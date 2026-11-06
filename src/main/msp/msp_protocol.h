@@ -326,10 +326,6 @@
 #define MSP_SET_VTXTABLE_POWERLEVEL 228 //in message          set vtxTable powerLevel data (one powerLevel at a time)
 
 // Custom/extended commands (local fork)
-// Z_EKF config:
-//  payload: qv_centi(u16), qba_centi(u16), qbb_centi(u16), r_centi(u16), gate_sigma_x10(u8), enable_adapt_r(u8)
-#define MSP_Z_EKF_CONFIG         231    //out message         Get Z_EKF parameters
-#define MSP_SET_Z_EKF_CONFIG     232    //in message          Set Z_EKF parameters
 // BARO altitude hold config:
 //  payload: kz_x100(u16), kpv(u16), kiv(u16), i_limit_cms(u16), vmax_cms(u16),
 //           vstick_slope_x1000(u8), vff_gain_x100(u8), thrust_zero_pwm(u16), hover_pwm(u16),

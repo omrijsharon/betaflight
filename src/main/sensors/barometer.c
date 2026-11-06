@@ -525,6 +525,8 @@ uint32_t baroUpdate(timeUs_t currentTimeUs)
                 if (baroIsCalibrated()) {
                     // zero baro altitude
                     baro.altitude = altitude - baroGroundAltitude;
+                    baro.sampleTimeUs = currentTimeUs;
+                    baro.sampleNumber++;
 #ifdef USE_CCIP
                     if (baro.altitude_prev!=0.0) {
                         baro.altitude_velocity = (baro.altitude - baro.altitude_prev)*1000000.0f / (currentTimeUs - prevTimeUs);

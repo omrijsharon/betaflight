@@ -15,7 +15,7 @@ MSP_STATUS = 101
 MSP_BOXIDS = 119
 MSP_EEPROM_WRITE = 250
 
-ALT_EST_VERSION = 2
+ALT_EST_VERSION = 3
 ARM_BOX_PERMANENT_ID = 0
 
 CONFIG_FIELDS = [
@@ -25,65 +25,22 @@ CONFIG_FIELDS = [
     "accel_bias_limit_cms2",
     "baro_noise_cm",
     "baro_delay_ms",
-    "innov_var_floor_cm2",
     "history_ms",
     "gate_sigma_x10",
-    "recovery_start_frames",
-    "recovery_r_scale_x10",
-    "recovery_decay_tc_frames",
-    "step_innov_thresh_cm",
-    "step_rate_thresh_cms",
-    "step_rate_filter_tau_ms",
-    "step_streak_frames",
-    "step_offset_alpha_x1000",
-    "step_offset_limit_cm",
-    "height_rate_lpf_hz_x100",
-    "pz_floor_cm",
-    "pv_floor_cms",
-    "pba_floor_cms2",
-    "tilt_r_start_deg",
-    "tilt_r_end_deg",
-    "tilt_r_scale_x10",
-    "accel_r_start_cms2",
-    "accel_r_end_cms2",
-    "accel_r_scale_x10",
 ]
 
-CONFIG_WIDTHS = [
-    2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2,
-    2, 2, 2, 1, 1, 2, 2, 2, 2,
-]
+CONFIG_WIDTHS = [2, 2, 2, 2, 2, 2, 2, 1]
 
 DEFAULT_CONFIG = {
     "version": ALT_EST_VERSION,
-    "flags": 0x001F,
+    "flags": 1,
     "accel_noise_cms2": 35,
     "accel_bias_noise_cms2": 2,
     "accel_bias_limit_cms2": 200,
     "baro_noise_cm": 150,
     "baro_delay_ms": 60,
-    "innov_var_floor_cm2": 400,
-    "history_ms": 300,
+    "history_ms": 250,
     "gate_sigma_x10": 50,
-    "recovery_start_frames": 30,
-    "recovery_r_scale_x10": 500,
-    "recovery_decay_tc_frames": 20,
-    "step_innov_thresh_cm": 150,
-    "step_rate_thresh_cms": 200,
-    "step_rate_filter_tau_ms": 150,
-    "step_streak_frames": 5,
-    "step_offset_alpha_x1000": 100,
-    "step_offset_limit_cm": 300,
-    "height_rate_lpf_hz_x100": 200,
-    "pz_floor_cm": 2,
-    "pv_floor_cms": 2,
-    "pba_floor_cms2": 1,
-    "tilt_r_start_deg": 45,
-    "tilt_r_end_deg": 75,
-    "tilt_r_scale_x10": 50,
-    "accel_r_start_cms2": 300,
-    "accel_r_end_cms2": 800,
-    "accel_r_scale_x10": 50,
 }
 
 STATUS_FIELDS = [
@@ -91,7 +48,6 @@ STATUS_FIELDS = [
     "flags",
     "altitude_cm",
     "velocity_cms",
-    "position_rate_cms",
     "baro_altitude_cm",
     "accel_world_z_cms2",
     "accel_bias_cms2",
@@ -99,12 +55,9 @@ STATUS_FIELDS = [
     "gate_cm",
     "r_eff_cm2",
     "s_cm2",
-    "baro_offset_cm",
     "baro_age_ms",
     "configured_delay_ms",
     "reject_streak",
-    "recovery_frames",
-    "step_streak",
 ]
 
 
@@ -152,7 +105,7 @@ def _flag_bit(first_word: int, extra: bytes, index: int) -> bool:
 
 
 def parse_config(payload: bytes) -> dict[str, int]:
-    if not payload or payload[0] != ALT_EST_VERSION:
+    if len(payload) != 1 + sum(CONFIG_WIDTHS) or payload[0] != ALT_EST_VERSION:
         raise ValueError("unsupported altitude estimator config payload")
 
     offset = 1
@@ -167,6 +120,8 @@ def parse_config(payload: bytes) -> dict[str, int]:
 
 
 def encode_config(config: dict[str, int]) -> bytes:
+    if config.keys() - DEFAULT_CONFIG.keys() or config.get("version", ALT_EST_VERSION) != ALT_EST_VERSION:
+        raise ValueError("unsupported altitude estimator config fields or version")
     merged = dict(DEFAULT_CONFIG)
     merged.update(config)
     parts = [struct.pack("<B", ALT_EST_VERSION)]
@@ -177,16 +132,16 @@ def encode_config(config: dict[str, int]) -> bytes:
 
 
 def parse_status(payload: bytes) -> dict[str, int]:
-    if not payload or payload[0] != ALT_EST_VERSION:
+    if len(payload) != 53 or payload[0] != ALT_EST_VERSION:
         raise ValueError("unsupported altitude estimator status payload")
 
     version, timestamp_us, flags = struct.unpack_from("<BII", payload, 0)
     offset = struct.calcsize("<BII")
-    signed_values = [_read_i32(v) for v in struct.unpack_from("<12I", payload, offset)]
-    offset += struct.calcsize("<12I")
-    delay_ms, reject_streak, recovery_frames, step_streak = struct.unpack_from("<4H", payload, offset)
+    signed_values = [_read_i32(v) for v in struct.unpack_from("<10I", payload, offset)]
+    offset += struct.calcsize("<10I")
+    delay_ms, reject_streak = struct.unpack_from("<2H", payload, offset)
 
-    values = [timestamp_us, flags, *signed_values, delay_ms, reject_streak, recovery_frames, step_streak]
+    values = [timestamp_us, flags, *signed_values, delay_ms, reject_streak]
     out = {"version": version}
     out.update(dict(zip(STATUS_FIELDS, values)))
     return out
@@ -379,7 +334,7 @@ class FakeMspClient:
         return dict(self.config)
 
     def set_alt_est_config(self, config: dict[str, int]) -> dict[str, int]:
-        self.config.update({key: int(value) for key, value in config.items() if key in CONFIG_FIELDS})
+        self.config = parse_config(encode_config(self.config | config))
         self.reboot_required = False
         return self.get_alt_est_config()
 
@@ -395,7 +350,6 @@ class FakeMspClient:
             "flags": 0x0007,
             "altitude_cm": int(altitude),
             "velocity_cms": int(velocity),
-            "position_rate_cms": int(velocity * 0.9),
             "baro_altitude_cm": int(altitude + innovation),
             "accel_world_z_cms2": int(-7.0 * math.sin(t * 0.7)),
             "accel_bias_cms2": int(self.bias),
@@ -403,12 +357,9 @@ class FakeMspClient:
             "gate_cm": 250,
             "r_eff_cm2": int(self.config["baro_noise_cm"] ** 2),
             "s_cm2": int(self.config["baro_noise_cm"] ** 2 + 400),
-            "baro_offset_cm": 0,
             "baro_age_ms": 0,
             "configured_delay_ms": self.config["baro_delay_ms"],
             "reject_streak": 0,
-            "recovery_frames": 0,
-            "step_streak": 0,
         }
 
     def set_armed(self, armed: bool) -> None:

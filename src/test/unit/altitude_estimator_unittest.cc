@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <limits>
 
 extern "C" {
     #include "platform.h"
@@ -13,34 +14,14 @@ extern "C" {
 static void resetEstimatorConfig(void)
 {
     altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = ALT_EST_CONFIG_DELAYED_FUSION | ALT_EST_CONFIG_ADAPTIVE_R | ALT_EST_CONFIG_BARO_STEP | ALT_EST_CONFIG_TILT_R | ALT_EST_CONFIG_ACCEL_R;
+    cfg->alt_est_flags = ALT_EST_CONFIG_DELAYED_FUSION;
     cfg->alt_est_accel_noise_cms2 = 35;
     cfg->alt_est_accel_bias_noise_cms2 = 2;
     cfg->alt_est_accel_bias_limit_cms2 = 200;
     cfg->alt_est_baro_noise_cm = 150;
     cfg->alt_est_baro_delay_ms = 60;
-    cfg->alt_est_innov_var_floor_cm2 = 400;
-    cfg->alt_est_history_ms = 300;
+    cfg->alt_est_history_ms = 250;
     cfg->alt_est_gate_sigma_x10 = 50;
-    cfg->alt_est_recovery_start_frames = 30;
-    cfg->alt_est_recovery_r_scale_x10 = 500;
-    cfg->alt_est_recovery_decay_tc_frames = 20;
-    cfg->alt_est_step_innov_thresh_cm = 150;
-    cfg->alt_est_step_rate_thresh_cms = 200;
-    cfg->alt_est_step_rate_filter_tau_ms = 150;
-    cfg->alt_est_step_streak_frames = 5;
-    cfg->alt_est_step_offset_alpha_x1000 = 100;
-    cfg->alt_est_step_offset_limit_cm = 300;
-    cfg->alt_est_height_rate_lpf_hz_x100 = 200;
-    cfg->alt_est_pz_floor_cm = 2;
-    cfg->alt_est_pv_floor_cms = 2;
-    cfg->alt_est_pba_floor_cms2 = 1;
-    cfg->alt_est_tilt_r_start_deg = 45;
-    cfg->alt_est_tilt_r_end_deg = 75;
-    cfg->alt_est_tilt_r_scale_x10 = 50;
-    cfg->alt_est_accel_r_start_cms2 = 300;
-    cfg->alt_est_accel_r_end_cms2 = 800;
-    cfg->alt_est_accel_r_scale_x10 = 50;
     altitudeEstimatorInit();
 }
 
@@ -48,34 +29,6 @@ static void armAtDatum(timeUs_t timeUs, float baroCm)
 {
     altitudeEstimatorUpdate(timeUs, false, true, baroCm, timeUs, true, 0.0f);
     altitudeEstimatorUpdate(timeUs + 10000, true, true, baroCm, timeUs + 10000, true, 0.0f);
-}
-
-static altitudeEstimatorMeasurement_t makeMeasurement(
-    timeUs_t timeUs,
-    altitudeEstimatorMeasurementSource_e source,
-    altitudeEstimatorMeasurementType_e type,
-    float valueCm,
-    float varianceCm2 = 0.0f)
-{
-    altitudeEstimatorMeasurement_t measurement = {};
-    measurement.timeUs = timeUs;
-    measurement.source = source;
-    measurement.type = type;
-    measurement.valueCm = valueCm;
-    measurement.varianceCm2 = varianceCm2;
-    measurement.quality = UINT8_MAX;
-    measurement.flags = ALT_EST_MEAS_FLAG_VALID;
-    return measurement;
-}
-
-static altitudeEstimatorInput_t makeInput(bool haveAccel = true, float accelWorldZ = 0.0f, bool haveTilt = false, float cosTilt = 1.0f)
-{
-    altitudeEstimatorInput_t input = {};
-    input.haveAccel = haveAccel;
-    input.accelWorldZ = accelWorldZ;
-    input.haveTilt = haveTilt;
-    input.cosTilt = cosTilt;
-    return input;
 }
 
 TEST(AltitudeEstimatorTest, PredictsVerticalVelocityFromAcceleration)
@@ -112,141 +65,60 @@ TEST(AltitudeEstimatorTest, FusesBaroMeasurements)
     EXPECT_GT(status->altitudeCm, 10.0f);
 }
 
-TEST(AltitudeEstimatorTest, FusesBaroThroughSourceAgnosticMeasurement)
+TEST(AltitudeEstimatorTest, FreefallIntegratesMinusGravity)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfigMutable()->alt_est_flags = 0;
-
-    altitudeEstimatorMeasurement_t baro = makeMeasurement(100000, ALT_EST_MEAS_SOURCE_BAROMETER, ALT_EST_MEAS_TYPE_ALTITUDE, 1000.0f);
-    altitudeEstimatorInput_t input = makeInput();
-    altitudeEstimatorUpdateWithMeasurements(100000, false, &baro, 1, &input);
-    baro.timeUs = 110000;
-    altitudeEstimatorUpdateWithMeasurements(110000, true, &baro, 1, &input);
-
-    timeUs_t now = 120000;
-    for (int i = 0; i < 50; i++) {
-        now += 10000;
-        baro = makeMeasurement(now, ALT_EST_MEAS_SOURCE_BAROMETER, ALT_EST_MEAS_TYPE_ALTITUDE, 1100.0f);
-        altitudeEstimatorUpdateWithMeasurements(now, true, &baro, 1, &input);
-    }
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_BARO_VALID);
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_BARO_FUSED);
-    EXPECT_GT(status->altitudeCm, 10.0f);
-}
-
-TEST(AltitudeEstimatorTest, AcceptsFutureMeasurementSourcesWithoutFusion)
-{
-    resetEstimatorConfig();
-    altitudeEstimatorConfigMutable()->alt_est_flags = 0;
     armAtDatum(100000, 1000.0f);
-
-    altitudeEstimatorMeasurement_t measurements[2];
-    measurements[0] = makeMeasurement(120000, ALT_EST_MEAS_SOURCE_GPS, ALT_EST_MEAS_TYPE_ALTITUDE, 1250.0f, 2500.0f);
-    measurements[1] = makeMeasurement(120000, ALT_EST_MEAS_SOURCE_RANGEFINDER, ALT_EST_MEAS_TYPE_SURFACE_DISTANCE, 180.0f, 100.0f);
-
-    altitudeEstimatorInput_t input = makeInput();
-    altitudeEstimatorUpdateWithMeasurements(120000, true, measurements, 2, &input);
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_GPS_ALT_VALID);
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_RANGEFINDER_VALID);
-    EXPECT_FALSE(status->flags & ALT_EST_STATUS_BARO_FUSED);
+    for (unsigned n = 1; n <= 100; n++)
+        altitudeEstimatorUpdate(110000 + n * 10000, true, false, 0, 0, true, -9.80665f);
+    EXPECT_NEAR(altitudeEstimatorGetVelocityCmsFloat(), -980.665f, 0.01f);
+    EXPECT_NEAR(altitudeEstimatorGetAltitudeCmFloat(), -490.3325f, 0.01f);
 }
 
-TEST(AltitudeEstimatorTest, ConfigurableCovarianceFloorConstrainsInnovationVariance)
+TEST(AltitudeEstimatorTest, DuplicateStaleAndFutureMeasurementsAreRejected)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = 0;
-    cfg->alt_est_baro_noise_cm = 1;
-    cfg->alt_est_innov_var_floor_cm2 = 1;
-    cfg->alt_est_gate_sigma_x10 = 100;
-    cfg->alt_est_pz_floor_cm = 100;
-    cfg->alt_est_pv_floor_cms = 50;
-    cfg->alt_est_pba_floor_cms2 = 10;
-    altitudeEstimatorInit();
     armAtDatum(100000, 1000.0f);
-
-    altitudeEstimatorUpdate(120000, true, true, 1000.0f, 120000, true, 0.0f);
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_BARO_FUSED);
-    EXPECT_GE(status->sCm2, 10000.0f);
+    altitudeEstimatorUpdate(120000, true, true, 1000, 120000, true, 0);
+    altitudeEstimatorUpdate(130000, true, true, 1000, 120000, true, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BAD_TIME);
+    altitudeEstimatorUpdate(140000, true, true, 1000, 150000, true, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BAD_TIME);
+    for (unsigned t = 150000; t <= 500000; t += 10000)
+        altitudeEstimatorUpdate(t, true, false, 0, 0, true, 0);
+    altitudeEstimatorUpdate(510000, true, true, 1000, 160000, true, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_STALE);
+    EXPECT_FALSE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BARO_FUSED);
 }
 
-TEST(AltitudeEstimatorTest, InflatesBaroRForTilt)
+TEST(AltitudeEstimatorTest, TimeWrapDoesNotCreateIntegrationJump)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = ALT_EST_CONFIG_TILT_R;
-    cfg->alt_est_baro_noise_cm = 100;
-    cfg->alt_est_tilt_r_start_deg = 45;
-    cfg->alt_est_tilt_r_end_deg = 75;
-    cfg->alt_est_tilt_r_scale_x10 = 50;
-    altitudeEstimatorInit();
-    armAtDatum(100000, 1000.0f);
-
-    altitudeEstimatorMeasurement_t baro = makeMeasurement(120000, ALT_EST_MEAS_SOURCE_BAROMETER, ALT_EST_MEAS_TYPE_ALTITUDE, 1000.0f);
-    altitudeEstimatorInput_t input = makeInput(true, 0.0f, true, 0.0f);
-    altitudeEstimatorUpdateWithMeasurements(120000, true, &baro, 1, &input);
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_TILT_R_INFLATED);
-    EXPECT_FALSE(status->flags & ALT_EST_STATUS_ACCEL_R_INFLATED);
-    EXPECT_GT(status->rEffCm2, 40000.0f);
+    const timeUs_t t = (timeUs_t)0xffff0000u;
+    armAtDatum(t, 1000);
+    for (unsigned n = 1; n <= 100; n++)
+        altitudeEstimatorUpdate(t + 10000 + n * 10000, true, false, 0, 0, true, 1);
+    EXPECT_NEAR(altitudeEstimatorGetVelocityCmsFloat(), 100, 0.01);
 }
 
-TEST(AltitudeEstimatorTest, InflatesBaroRForHighVerticalAcceleration)
+TEST(AltitudeEstimatorTest, RejectsInvalidAccelerationAndDoesNotIntegrateTimeGap)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = ALT_EST_CONFIG_ACCEL_R;
-    cfg->alt_est_baro_noise_cm = 100;
-    cfg->alt_est_accel_r_start_cms2 = 300;
-    cfg->alt_est_accel_r_end_cms2 = 800;
-    cfg->alt_est_accel_r_scale_x10 = 50;
-    altitudeEstimatorInit();
-    armAtDatum(100000, 1000.0f);
-
-    altitudeEstimatorMeasurement_t baro = makeMeasurement(120000, ALT_EST_MEAS_SOURCE_BAROMETER, ALT_EST_MEAS_TYPE_ALTITUDE, 1000.0f);
-    altitudeEstimatorInput_t input = makeInput(true, 10.0f, false, 1.0f);
-    altitudeEstimatorUpdateWithMeasurements(120000, true, &baro, 1, &input);
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_FALSE(status->flags & ALT_EST_STATUS_TILT_R_INFLATED);
-    EXPECT_TRUE(status->flags & ALT_EST_STATUS_ACCEL_R_INFLATED);
-    EXPECT_GT(status->rEffCm2, 40000.0f);
+    armAtDatum(100000, 1000);
+    altitudeEstimatorUpdate(120000, true, false, 0, 0, false, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_INVALID_INPUT);
+    altitudeEstimatorUpdate(500000, true, false, 0, 0, true, 1);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BAD_TIME);
+    EXPECT_FLOAT_EQ(altitudeEstimatorGetVelocityCmsFloat(), 0);
 }
 
-TEST(AltitudeEstimatorTest, AdaptiveRInflationCanBeDisabled)
-{
-    resetEstimatorConfig();
-    altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = 0;
-    cfg->alt_est_baro_noise_cm = 100;
-    altitudeEstimatorInit();
-    armAtDatum(100000, 1000.0f);
-
-    altitudeEstimatorMeasurement_t baro = makeMeasurement(120000, ALT_EST_MEAS_SOURCE_BAROMETER, ALT_EST_MEAS_TYPE_ALTITUDE, 1000.0f);
-    altitudeEstimatorInput_t input = makeInput(true, 10.0f, true, 0.0f);
-    altitudeEstimatorUpdateWithMeasurements(120000, true, &baro, 1, &input);
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_FALSE(status->flags & ALT_EST_STATUS_TILT_R_INFLATED);
-    EXPECT_FALSE(status->flags & ALT_EST_STATUS_ACCEL_R_INFLATED);
-    EXPECT_NEAR(status->rEffCm2, 10000.0f, 1.0f);
-}
-
-TEST(AltitudeEstimatorTest, RejectsLargeInnovationBeforeRecovery)
+TEST(AltitudeEstimatorTest, RejectsLargeInnovation)
 {
     resetEstimatorConfig();
     altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
     cfg->alt_est_flags = 0;
     cfg->alt_est_baro_noise_cm = 20;
     cfg->alt_est_gate_sigma_x10 = 10;
-    cfg->alt_est_recovery_start_frames = 100;
     armAtDatum(100000, 1000.0f);
 
     altitudeEstimatorUpdate(130000, true, true, 5000.0f, 130000, true, 0.0f);
@@ -268,44 +140,73 @@ TEST(AltitudeEstimatorTest, DelayedFusionUsesHistory)
         altitudeEstimatorUpdate(now, true, true, 1000.0f, now, true, 0.0f);
     }
 
-    altitudeEstimatorUpdate(now + 10000, true, true, 1020.0f, now + 10000, true, 0.0f);
+    // Core accepts effective timestamps; driver delay is applied by position.c.
+    // Start a new run so earlier current-time observations cannot make this
+    // delayed sample out-of-order.
+    resetEstimatorConfig();
+    armAtDatum(100000, 1000.0f);
+    for (timeUs_t t = 120000; t <= now; t += 10000)
+        altitudeEstimatorUpdate(t, true, false, 0, 0, true, 0);
+    altitudeEstimatorUpdate(now + 10000, true, true, 1020.0f, now - 50000, true, 0.0f);
 
     const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
     EXPECT_TRUE(status->flags & ALT_EST_STATUS_BARO_FUSED);
     EXPECT_FALSE(status->flags & ALT_EST_STATUS_HISTORY_MISS);
 }
 
-TEST(AltitudeEstimatorTest, BiasIsLimited)
+TEST(AltitudeEstimatorTest, RejectionNeverForcesFusionOrMovesBarometerDatum)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfigMutable();
-    cfg->alt_est_flags = 0;
-    cfg->alt_est_accel_bias_limit_cms2 = 5;
-    cfg->alt_est_baro_noise_cm = 20;
-    armAtDatum(100000, 1000.0f);
-
-    timeUs_t now = 120000;
-    for (int i = 0; i < 100; i++) {
-        now += 10000;
-        altitudeEstimatorUpdate(now, true, true, 1000.0f, now, true, 2.0f);
+    armAtDatum(100000, 1000);
+    for (unsigned n = 1; n <= 200; n++) {
+        altitudeEstimatorUpdate(110000 + n * 10000, true, true, 1000000, 110000 + n * 10000, true, 0);
+        const auto *status = altitudeEstimatorGetStatus();
+        EXPECT_TRUE(status->flags & ALT_EST_STATUS_BARO_REJECT);
+        EXPECT_FALSE(status->flags & ALT_EST_STATUS_BARO_FUSED);
+        EXPECT_FLOAT_EQ(status->altitudeCm, 0);
     }
-
-    const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
-    EXPECT_LE(status->accelBiasCms2, 5.0f);
-    EXPECT_GE(status->accelBiasCms2, -5.0f);
 }
 
-TEST(AltitudeEstimatorTest, PositionRateOutputFollowsVelocity)
+TEST(AltitudeEstimatorTest, MeasurementOutsideStoredHistoryIsNotFusedAtWrongTime)
 {
     resetEstimatorConfig();
-    altitudeEstimatorConfigMutable()->alt_est_flags = 0;
-    armAtDatum(100000, 1000.0f);
+    altitudeEstimatorConfigMutable()->alt_est_history_ms = 20;
+    armAtDatum(100000, 1000);
+    for (unsigned t = 120000; t <= 300000; t += 10000)
+        altitudeEstimatorUpdate(t, true, false, 0, 0, true, 0);
+    altitudeEstimatorUpdate(310000, true, true, 1000, 200000, true, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_HISTORY_MISS);
+    EXPECT_FALSE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BARO_FUSED);
+}
 
-    timeUs_t now = 120000;
-    for (int i = 0; i < 80; i++) {
-        now += 10000;
-        altitudeEstimatorUpdate(now, true, false, 0.0f, now, true, 0.8f);
+TEST(AltitudeEstimatorTest, FullHistoryWindowSurvivesRepeatedEviction)
+{
+    resetEstimatorConfig();
+    armAtDatum(100000, 1000);
+    for (unsigned n = 1; n <= 1000; n++) {
+        const timeUs_t now = 110000 + n * 10000;
+        const bool haveBaro = n > 30;
+        // Alternate an exact oldest timestamp with a fractional one. Both
+        // require the full window after many passes through buffer eviction.
+        const timeUs_t captured = now - ((n & 1) ? 250000 : 245000);
+        altitudeEstimatorUpdate(now, true, haveBaro, 1000, captured, true, 0);
+        if (haveBaro) {
+            EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BARO_FUSED);
+            EXPECT_FALSE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_HISTORY_MISS);
+            EXPECT_FLOAT_EQ(altitudeEstimatorGetAltitudeCmFloat(), 0);
+        }
     }
+}
 
-    EXPECT_GT(altitudeEstimatorGetPositionRateCmsFloat(), 1.0f);
+TEST(AltitudeEstimatorTest, NonfiniteMeasurementsDoNotPoisonState)
+{
+    resetEstimatorConfig();
+    armAtDatum(100000, 1000);
+    altitudeEstimatorUpdate(120000, true, false, 0, 0, true, std::numeric_limits<float>::quiet_NaN());
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_INVALID_INPUT);
+    EXPECT_FLOAT_EQ(altitudeEstimatorGetVelocityCmsFloat(), 0);
+    altitudeEstimatorUpdate(130000, true, true, std::numeric_limits<float>::infinity(), 130000, true, 0);
+    EXPECT_TRUE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_INVALID_INPUT);
+    EXPECT_FALSE(altitudeEstimatorGetStatus()->flags & ALT_EST_STATUS_BARO_FUSED);
+    EXPECT_FLOAT_EQ(altitudeEstimatorGetVelocityCmsFloat(), 0);
 }

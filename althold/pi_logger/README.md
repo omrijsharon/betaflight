@@ -2,6 +2,10 @@
 
 This is the Pi Zero 2 W logger/webapp for altitude-estimator field work. It talks directly to Betaflight MSP2 over UART with `pyserial`; it does not use `yamspy`, `ArUco_Chaser`, or any OpenAI API key.
 
+The client requires altitude-estimator payload version **3** (16-byte config,
+53-byte status). Update it together with the firmware; old EKF configuration and
+v1/v2 estimator payloads are unsupported. See [current filter notes](../simulator_estimator_port.md).
+
 Run locally in fake-MSP mode:
 
 ```bash

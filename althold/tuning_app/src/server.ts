@@ -187,10 +187,10 @@ function displayFieldName(field: string): string {
 
 function unitForField(field: string): string {
   const name = displayFieldName(field);
-  if (name.endsWith("_cm") || name === "altitude_cm" || name === "baro_altitude_cm" || name === "innovation_cm" || name === "gate_cm" || name === "baro_offset_cm") {
+  if (name.endsWith("_cm") || name === "altitude_cm" || name === "baro_altitude_cm" || name === "innovation_cm" || name === "gate_cm") {
     return "cm";
   }
-  if (name.endsWith("_cms") || name === "velocity_cms" || name === "position_rate_cms") {
+  if (name.endsWith("_cms") || name === "velocity_cms") {
     return "cm/s";
   }
   if (name.endsWith("_cms2") || name === "accel_world_z_cms2" || name === "accel_bias_cms2") {

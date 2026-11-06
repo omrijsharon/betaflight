@@ -27,6 +27,9 @@
 #include "pg/pg_ids.h"
 
 static float displayAltitudeCm = 0.0f;
+#ifdef USE_BARO
+static uint32_t lastBaroSampleNumber;
+#endif
 
 #ifdef USE_VARIO
 static int16_t estimatedVario = 0;
@@ -41,29 +44,13 @@ typedef enum {
     GPS_ONLY
 } altitudeSource_e;
 
-PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 12);
+PG_REGISTER_WITH_RESET_TEMPLATE(positionConfig_t, positionConfig, PG_POSITION, 13);
 
 PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .altitude_source = DEFAULT,
     .altitude_prefer_baro = 100,
     .altitude_lpf = 300,
     .altitude_d_lpf = 100,
-    .ekf_qv_centi = 80,
-    .ekf_qba_centi = 2,
-    .ekf_qbb_centi = 3,
-    .ekf_r_centi = 25,
-    .ekf_gate_sigma_x10 = 30,
-    .ekf_enable_adapt_r = 1,
-    .ekf_s_min_m2_x1000 = 40,
-    .ekf_reject_recovery_start_frames = 30,
-    .ekf_recovery_r_scale_x10 = 500,
-    .ekf_recovery_decay_tc_frames = 20,
-    .ekf_step_innov_thresh_cm = 100,
-    .ekf_step_rate_thresh_cms = 100,
-    .ekf_step_rate_filter_tau_ms = 150,
-    .ekf_step_streak_frames = 5,
-    .ekf_step_bb_alpha_x1000 = 100,
-    .ekf_step_bb_max_adjust_cm = 300,
     .alt_hold_kz_x100 = 80,
     .alt_hold_kpv = 200,
     .alt_hold_kiv = 60,
@@ -74,11 +61,6 @@ PG_RESET_TEMPLATE(positionConfig_t, positionConfig,
     .alt_hold_hover_pwm = 1300,
     .alt_hold_i_limit_cms = 500,
 );
-
-void positionUpdateAltEKFTunables(void)
-{
-    altitudeEstimatorUpdateConfig();
-}
 
 void positionInit(void)
 {
@@ -91,6 +73,9 @@ void positionInit(void)
     pt2FilterInit(&altitudeDerivativeLpf, pt2FilterGain(altitudeDerivativeCutoffHz, sampleTimeS));
 
     altitudeEstimatorInit();
+#ifdef USE_BARO
+    lastBaroSampleNumber = baro.sampleNumber;
+#endif
     mixerSetThrottleAltitudeCorrection(0);
 }
 
@@ -99,9 +84,13 @@ void calculateEstimatedAltitude(void)
     const timeUs_t nowUs = micros();
     float baroAltCm = 0.0f;
     bool haveBaro = false;
+    timeUs_t baroTimeUs = nowUs;
 
 #ifdef USE_BARO
-    if (sensors(SENSOR_BARO)) {
+    if (sensors(SENSOR_BARO) && baroIsCalibrated() && baro.sampleNumber != lastBaroSampleNumber) {
+        lastBaroSampleNumber = baro.sampleNumber;
+        // Driver receipt time minus configured sensor latency, exactly once.
+        baroTimeUs = baro.sampleTimeUs - altitudeEstimatorConfig()->alt_est_baro_delay_ms * 1000u;
         baroAltCm = getBaroAltitude();
         haveBaro = true;
     }
@@ -109,7 +98,7 @@ void calculateEstimatedAltitude(void)
 
     float accelWorldZ = 0.0f;
     bool haveAccel = false;
-    if (sensors(SENSOR_ACC)) {
+    if (sensors(SENSOR_ACC) && acc.isAccelUpdatedAtLeastOnce && accIsCalibrationComplete()) {
         const float accelScale = acc.dev.acc_1G_rec * 9.80665f;
         const float ax = acc.accADC[X] * accelScale;
         const float ay = acc.accADC[Y] * accelScale;
@@ -118,22 +107,7 @@ void calculateEstimatedAltitude(void)
         haveAccel = true;
     }
 
-    altitudeEstimatorInput_t estimatorInput = {
-        .haveAccel = haveAccel,
-        .accelWorldZ = accelWorldZ,
-        .haveTilt = true,
-        .cosTilt = constrainf(rMat[2][2], 0.0f, 1.0f),
-    };
-    altitudeEstimatorMeasurement_t baroMeasurement = {
-        .timeUs = nowUs,
-        .source = ALT_EST_MEAS_SOURCE_BAROMETER,
-        .type = ALT_EST_MEAS_TYPE_ALTITUDE,
-        .valueCm = baroAltCm,
-        .varianceCm2 = 0.0f,
-        .quality = UINT8_MAX,
-        .flags = haveBaro ? ALT_EST_MEAS_FLAG_VALID : 0,
-    };
-    altitudeEstimatorUpdateWithMeasurements(nowUs, ARMING_FLAG(ARMED), haveBaro ? &baroMeasurement : NULL, haveBaro ? 1 : 0, &estimatorInput);
+    altitudeEstimatorUpdate(nowUs, ARMING_FLAG(ARMED), haveBaro, baroAltCm, baroTimeUs, haveAccel, accelWorldZ);
     const altitudeEstimatorStatus_t *status = altitudeEstimatorGetStatus();
 
     displayAltitudeCm = pt2FilterApply(&altitudeLpf, status->altitudeCm);
@@ -153,7 +127,7 @@ void calculateEstimatedAltitude(void)
     DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 7, (int16_t)constrain((status->flags & ALT_EST_STATUS_BARO_REJECT) ? status->rejectStreak : 0, INT16_MIN, INT16_MAX));
 
 #ifdef USE_BARO
-    DEBUG_SET(DEBUG_ALTITUDE, 1, lrintf((haveBaro ? (baroAltCm - status->baroOffsetCm) : 0.0f) / 10.0f));
+    DEBUG_SET(DEBUG_ALTITUDE, 1, lrintf((haveBaro ? baroAltCm : 0.0f) / 10.0f));
 #endif
 #ifdef USE_VARIO
     DEBUG_SET(DEBUG_ALTITUDE, 3, estimatedVario);

@@ -2,6 +2,12 @@
 
 Status reviewed: 2026-05-24.
 
+2026-11-04: the core and measurement adapter were replaced with the simulator-derived
+baseline and obsolete EKF compatibility was removed. See
+[port notes](simulator_estimator_port.md) for current settings, MSP payload v3,
+configuration resets and validation. The checklists below are historical; their
+old step/recovery/compatibility items do not describe the current implementation.
+
 Legend:
 
 - `[x]` means implemented, documented, or verified for the scope stated on that line.
