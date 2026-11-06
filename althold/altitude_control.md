@@ -27,9 +27,14 @@ from enabling ANGLE. LEVEL hover thrust is inferred from that collective and til
 incorrect trim, throttle transients or an accelerating entry can bias it.
 
 Your initial hover stick position is ignored as a vertical request. Until you
-move the stick within 25 PWM of midrc, it brakes/holds. After that, leaving
-40 PWM from center requests speed; returning inside 25 captures a stop once.
-Between 25 and 40 on return it requests zero speed without repeatedly recapturing.
+move the stick within 100 PWM of midrc (inclusive), it brakes/holds. After that,
+moving beyond 115 PWM from center requests speed; returning within 100 captures
+a stop once. Between 100 and 115 on return it requests zero speed while waiting
+for center capture; an existing HOLD remains latched throughout that range.
+At midrc=1500, capture is 1400..1600; HOLD exits below 1385 or above 1615.
+These thresholds are compile-time constants, not CLI/MSP settings. The speed
+mapping is rescaled over the remaining 385 PWM so full stick retains the configured
+maximum speed. This adds no parameter storage or runtime state.
 Input is rcData, centered at configured midrc, not throttle-curve output.
 It assumes conventional approximately 1000..2000 endpoints.
 

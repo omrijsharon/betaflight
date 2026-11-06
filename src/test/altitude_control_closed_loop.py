@@ -135,8 +135,27 @@ def run(lib):
     assert cmd(SET, trial) is None and cmd(GET) == cfg
     assert all(tick()["mode"] == 1 for _ in range(50))
     assert tick(stick=0)["mode"] == 2
-    assert tick(stick=41)["mode"] == 3 and tick(stick=30)["mode"] == 3
-    assert tick(stick=25)["mode"] == 2
+    for sign in (-1, 1):
+        tick(aux=0)
+        assert tick(stick=sign*101)["mode"] == 1
+        assert tick(stick=sign*101)["mode"] == 1
+        assert tick(stick=sign*100)["mode"] == 2  # inclusive center capture
+        target = tick(stick=sign*100)["height_ref_m"]
+        for offset in (74, 92, 100, 101, 115, 100):
+            state = tick(stick=sign*offset, z=3)
+            assert state["mode"] == 2 and state["height_ref_m"] == target
+        assert tick(stick=sign*116)["mode"] == 3
+        for _ in range(400):
+            state = tick(stick=sign*308)
+        u = (308-115)/(500-115)
+        assert abs(state["speed_cmd_mps"]-sign*u*u*(3-2*u)) < 1e-4
+        for _ in range(400):
+            state = tick(stick=sign*500)
+        assert abs(state["speed_cmd_mps"]-sign) < 1e-4
+        for offset in (115, 101):
+            assert tick(stick=sign*offset)["mode"] == 3
+        assert tick(stick=sign*100)["mode"] == 2
+    print("PASS: signed ±100 capture, ±115 exit hysteresis, no recapture, rescaled speed mapping and endpoints")
     for key in ("good", "allow", "delta", "z"):
         assert tick(**{key: 55000 if key == "delta" else float("nan") if key == "z" else 0})["mode"] == 4
         assert tick()["mode"] == 4
