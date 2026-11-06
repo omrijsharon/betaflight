@@ -26,7 +26,6 @@
 #include "common/time.h"
 
 #define MSP_OVERRIDE_REQUIRED_CHANNEL_MASK 0x000FU
-#define MSP_OVERRIDE_WATCHDOG_TIMEOUT_US 100000U
 
 typedef struct mspOverrideWatchdogState_s {
     timeUs_t lastFrameTimeUs;
@@ -44,7 +43,8 @@ bool mspOverrideWatchdogUpdate(
     timeUs_t currentTimeUs,
     bool overrideModeActive,
     uint32_t channelMask,
-    bool validOverrideFrameReceived);
+    bool validOverrideFrameReceived,
+    uint16_t timeoutMs);
 uint32_t mspOverrideWatchdogFrameAgeUs(
     const mspOverrideWatchdogState_t *state,
     timeUs_t currentTimeUs);

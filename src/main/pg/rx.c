@@ -113,6 +113,7 @@ void pgResetFn_rxConfig(rxConfig_t *rxConfig)
         .srxl2_baud_fast = true,
         .sbus_baud_fast = false,
         .msp_override_channels_mask = 0,
+        .msp_override_watchdog_timeout_ms = 100,
         .crsf_use_negotiated_baud = false,
     );
 

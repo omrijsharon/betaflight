@@ -64,6 +64,8 @@ typedef struct rxConfig_s {
     uint32_t msp_override_channels_mask;       // Channels to override when the MSP override mode is enabled
     uint8_t msp_override_failsafe;             // if false then extra RC link is always required in msp_override mode, true - allows control via msp_override without extra RC link (autonomous use case)
     uint8_t crsf_use_negotiated_baud;          // Use negotiated baud rate for CRSF V3
+    // Start after the complete v4 record, including its trailing padding, when loading older EEPROM.
+    uint16_t msp_override_watchdog_timeout_ms __attribute__((aligned(4)));
 } rxConfig_t;
 
 PG_DECLARE(rxConfig_t, rxConfig);

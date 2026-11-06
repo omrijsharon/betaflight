@@ -52,7 +52,8 @@ bool rxMspOverrideWatchdogUpdate(timeUs_t currentTimeUs, bool validOverrideFrame
         currentTimeUs,
         IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE),
         rxConfig()->msp_override_channels_mask,
-        validOverrideFrameReceived);
+        validOverrideFrameReceived,
+        rxConfig()->msp_override_watchdog_timeout_ms);
 }
 
 bool rxMspOverrideIsActive(void)

@@ -32,7 +32,8 @@ bool mspOverrideWatchdogUpdate(
     timeUs_t currentTimeUs,
     bool overrideModeActive,
     uint32_t channelMask,
-    bool validOverrideFrameReceived)
+    bool validOverrideFrameReceived,
+    uint16_t timeoutMs)
 {
     const bool wasPermitted = state->permitted;
 
@@ -60,7 +61,7 @@ bool mspOverrideWatchdogUpdate(
     }
 
     if (state->permitted
-        && cmpTimeUs(currentTimeUs, state->lastFrameTimeUs) >= (timeDelta_t)MSP_OVERRIDE_WATCHDOG_TIMEOUT_US) {
+        && cmpTimeUs(currentTimeUs, state->lastFrameTimeUs) >= (timeDelta_t)(timeoutMs * 1000U)) {
         state->permitted = false;
         state->timeoutLatched = true;
         state->expiryCount++;

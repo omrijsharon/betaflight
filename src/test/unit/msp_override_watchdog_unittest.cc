@@ -29,13 +29,15 @@ extern "C" {
 namespace {
 
 constexpr uint32_t kMask = MSP_OVERRIDE_REQUIRED_CHANNEL_MASK;
+constexpr uint16_t kTimeoutMs = 100;
+constexpr timeUs_t kTimeoutUs = 100000;
 constexpr timeUs_t kStartUs = 1000;
 
 mspOverrideWatchdogState_t readyWatchdog()
 {
     mspOverrideWatchdogState_t state;
     mspOverrideWatchdogInit(&state);
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs, false, kMask, false));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs, false, kMask, false, kTimeoutMs));
     return state;
 }
 
@@ -44,13 +46,13 @@ TEST(MspOverrideWatchdogTest, RejectsHighAtBootUntilOffIsObserved)
     mspOverrideWatchdogState_t state;
     mspOverrideWatchdogInit(&state);
 
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs, true, kMask, true));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs, true, kMask, true, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
     EXPECT_TRUE(state.timeoutLatched);
 
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, false, kMask, false));
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 2, true, kMask, false));
-    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, kStartUs + 3, true, kMask, true));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, false, kMask, false, kTimeoutMs));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 2, true, kMask, false, kTimeoutMs));
+    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, kStartUs + 3, true, kMask, true, kTimeoutMs));
     EXPECT_TRUE(state.permitted);
 }
 
@@ -58,9 +60,9 @@ TEST(MspOverrideWatchdogTest, RequiresAFrameAfterTheRisingEdge)
 {
     mspOverrideWatchdogState_t state = readyWatchdog();
 
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, true, kMask, false));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, true, kMask, false, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
-    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, kStartUs + 2, true, kMask, true));
+    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, kStartUs + 2, true, kMask, true, kTimeoutMs));
     EXPECT_TRUE(state.permitted);
 }
 
@@ -69,35 +71,48 @@ TEST(MspOverrideWatchdogTest, ExpiresAtTheExactDeadline)
     mspOverrideWatchdogState_t state = readyWatchdog();
     const timeUs_t frameTimeUs = kStartUs + 10;
 
-    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true));
+    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true, kTimeoutMs));
     EXPECT_FALSE(mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US - 1, true, kMask, false));
+        &state, frameTimeUs + kTimeoutUs - 1, true, kMask, false, kTimeoutMs));
     EXPECT_TRUE(state.permitted);
 
     EXPECT_TRUE(mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US, true, kMask, false));
+        &state, frameTimeUs + kTimeoutUs, true, kMask, false, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
     EXPECT_TRUE(state.timeoutLatched);
     EXPECT_EQ(1U, state.expiryCount);
+}
+
+TEST(MspOverrideWatchdogTest, UsesConfiguredMillisecondsAtTheDeadline)
+{
+    for (uint16_t timeoutMs : { 1, 75, 250, 1000 }) {
+        auto state = readyWatchdog();
+        const timeUs_t deadline = kStartUs + timeoutMs * 1000U;
+        EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, kStartUs, true, kMask, true, timeoutMs));
+        EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, deadline - 1, true, kMask, false, timeoutMs));
+        EXPECT_TRUE(state.permitted);
+        EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, deadline, true, kMask, true, timeoutMs));
+        EXPECT_TRUE(state.timeoutLatched);
+    }
 }
 
 TEST(MspOverrideWatchdogTest, IgnoresFramesAfterTimeoutUntilOffIsObserved)
 {
     mspOverrideWatchdogState_t state = readyWatchdog();
     const timeUs_t frameTimeUs = kStartUs + 10;
-    mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true);
+    mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true, kTimeoutMs);
     mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US, true, kMask, false);
+        &state, frameTimeUs + kTimeoutUs, true, kMask, false, kTimeoutMs);
 
     EXPECT_FALSE(mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US + 1, true, kMask, true));
+        &state, frameTimeUs + kTimeoutUs + 1, true, kMask, true, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
 
     mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US + 2, false, kMask, true);
+        &state, frameTimeUs + kTimeoutUs + 2, false, kMask, true, kTimeoutMs);
     EXPECT_FALSE(state.permitted);
     EXPECT_TRUE(mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US + 3, true, kMask, true));
+        &state, frameTimeUs + kTimeoutUs + 3, true, kMask, true, kTimeoutMs));
     EXPECT_TRUE(state.permitted);
 }
 
@@ -105,10 +120,10 @@ TEST(MspOverrideWatchdogTest, LateFrameCannotRefreshAnExpiredHighSession)
 {
     mspOverrideWatchdogState_t state = readyWatchdog();
     const timeUs_t frameTimeUs = kStartUs + 10;
-    mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true);
+    mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true, kTimeoutMs);
 
     EXPECT_TRUE(mspOverrideWatchdogUpdate(
-        &state, frameTimeUs + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US, true, kMask, true));
+        &state, frameTimeUs + kTimeoutUs, true, kMask, true, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
     EXPECT_TRUE(state.timeoutLatched);
     EXPECT_EQ(1U, state.expiryCount);
@@ -118,7 +133,7 @@ TEST(MspOverrideWatchdogTest, RequiresTheExactStickChannelMask)
 {
     for (const uint32_t mask : { 0x0000U, 0x0007U, 0x001FU }) {
         mspOverrideWatchdogState_t state = readyWatchdog();
-        EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, true, mask, true));
+        EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, kStartUs + 1, true, mask, true, kTimeoutMs));
         EXPECT_FALSE(state.permitted);
         EXPECT_TRUE(state.timeoutLatched);
     }
@@ -129,10 +144,10 @@ TEST(MspOverrideWatchdogTest, HandlesMicrosWraparound)
     mspOverrideWatchdogState_t state = readyWatchdog();
     const timeUs_t frameTimeUs = UINT32_MAX - 50000U;
 
-    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true));
-    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, 49998U, true, kMask, false));
+    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, frameTimeUs, true, kMask, true, kTimeoutMs));
+    EXPECT_FALSE(mspOverrideWatchdogUpdate(&state, 49998U, true, kMask, false, kTimeoutMs));
     EXPECT_TRUE(state.permitted);
-    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, 49999U, true, kMask, false));
+    EXPECT_TRUE(mspOverrideWatchdogUpdate(&state, 49999U, true, kMask, false, kTimeoutMs));
     EXPECT_FALSE(state.permitted);
 }
 
@@ -141,11 +156,11 @@ TEST(MspOverrideWatchdogTest, ReportsFrameAgeAndPreservesExpiryCount)
     mspOverrideWatchdogState_t state = readyWatchdog();
     EXPECT_EQ(UINT32_MAX, mspOverrideWatchdogFrameAgeUs(&state, kStartUs));
 
-    mspOverrideWatchdogUpdate(&state, kStartUs + 10, true, kMask, true);
+    mspOverrideWatchdogUpdate(&state, kStartUs + 10, true, kMask, true, kTimeoutMs);
     EXPECT_EQ(25U, mspOverrideWatchdogFrameAgeUs(&state, kStartUs + 35));
     mspOverrideWatchdogUpdate(
-        &state, kStartUs + 10 + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US, true, kMask, false);
-    mspOverrideWatchdogUpdate(&state, kStartUs + 20 + MSP_OVERRIDE_WATCHDOG_TIMEOUT_US, false, kMask, false);
+        &state, kStartUs + 10 + kTimeoutUs, true, kMask, false, kTimeoutMs);
+    mspOverrideWatchdogUpdate(&state, kStartUs + 20 + kTimeoutUs, false, kMask, false, kTimeoutMs);
     EXPECT_EQ(1U, state.expiryCount);
 }
 
