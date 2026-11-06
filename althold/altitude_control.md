@@ -17,12 +17,18 @@ ALTITUDE switch OFF, then select it. Admission requires fresh fused pressure,
 fresh IMU, calibrated sensors, a valid datum, a healthy RX, tilt cosine >=0.85,
 absolute vertical speed <=0.8 m/s, and collective between 0.10 and 0.80 within the
 configured throttle ceiling. These are admission checks, NOT airborne detection:
-do not engage on the ground. An ON switch at arming cannot engage automatically.
+do not engage on the ground. An ON switch at arming cannot engage throttle control automatically.
 
-The altitude task runs at 100 Hz. On admission it requests ANGLE automatically,
-suppresses HORIZON, and waits for the mixer to observe ANGLE+ALTITUDE. It then
-seeds output from the preceding actual manual collective. In this sense the
-transfer has no deliberate throttle step. It does not remove the attitude change
+Selecting ALTITUDE requests ANGLE automatically and suppresses HORIZON, independent
+of whether vertical control is admitted, active or locked out. As with ordinary
+ANGLE, this requires an accelerometer. Rejected engagement or a later throttle
+release must not switch attitude control to Acro. Switching ALTITUDE OFF restores
+the other selected attitude mode. The runtime ALTITUDE flag still indicates an
+active vertical controller; ANGLE can remain on when that flag is off.
+
+The altitude task runs at 100 Hz. On admission it waits for the mixer to observe
+ANGLE+ALTITUDE, then seeds output from the preceding actual manual collective.
+In this sense the transfer has no deliberate throttle step. It does not remove the attitude change
 from enabling ANGLE. LEVEL hover thrust is inferred from that collective and tilt;
 incorrect trim, throttle transients or an accelerating entry can bias it.
 
@@ -47,12 +53,19 @@ available; ALTITUDE does not hold horizontal position.
 
 Failsafe/RX loss, GPS Rescue, launch mode, crash-flip, 3D, fixed-wing and stick arming
 are incompatible. An estimator fault, >50 ms controller scheduling gap, >50 ms IMU
-age, >500 ms without accepted pressure fusion, or >60-degree tilt removes ownership.
+age, >500 ms without accepted pressure fusion, or tilt of 60 degrees or more removes ownership.
 Single barometer rejections do not immediately disable it. Invalid/nonfinite input
 and implausible >50 m/s vertical speed are rejected even under fast-math.
 A fault latches: cycle the ALTITUDE switch OFF then ON to request another admission.
 Existing failsafe/Rescue and disarm behavior take precedence; sensor fault alone
-returns control to the pilot. This fallback can cause a throttle change.
+returns throttle control to the pilot. This fallback can cause a throttle change;
+ANGLE remains requested while ALTITUDE is selected. The 60-degree vertical-control
+cutoff is unchanged, even if the configured ANGLE limit is higher.
+
+While admitted, WAIT_CENTER, HOLD and SPEED all continuously calculate thrust at
+100 Hz, including with a centered stick. No repeated stick nudge is required to
+keep control active. OFF and LOCKED do not own throttle, even if the switch is ON;
+recovering valid sensor data alone does not re-engage a latched controller.
 
 ## Control law and memory
 
@@ -179,8 +192,17 @@ Neither source update installs itself on the Pi or flashes the FC.
 ## Verification and remaining work
 
 Host tests compile actual C source with -O2 -ffast-math -Werror:
-src/test/altitude_control_closed_loop.py and altitude_control_adapter.py.
-They cover 200 stopping trajectories against the simulator's planner, capture
+src/test/altitude_control_closed_loop.py, altitude_control_adapter.py and
+altitude_control_modes.py. The mode regression compiles the production core mode
+selection block together with the controller and mixer block. It covers ALTITUDE
+selection before admission, rejected entry, arming with the switch ON, WAIT_CENTER/
+HOLD/SPEED, 60-degree tilt release, estimator faults, scheduling timeout, mixer
+watchdog/RX/failsafe release, lockout recovery and switching OFF. ANGLE persists,
+HORIZON is suppressed and manual throttle fallback remains available. A second
+build with USE_ALTITUDE_CONTROL disabled checks ordinary mode behavior. The test
+failed on the pre-fix core.c and passes after separating selection from admission.
+
+The controller and adapter suites cover 200 stopping trajectories against the simulator's planner, capture
 widths 0/25/80/100/200 in both directions, fixed +15 exit hysteresis, speed mapping,
 configuration v2 validation and production PG load/store (including old-group
 default initialization with existing gains preserved), arming and
@@ -220,7 +242,10 @@ RAM is 48.25% of 192 KiB. No heap allocations or additional estimator history.
 These are linker region sizes, not measured worst-case stack or task timing.
 
 HEX is local/ignored: obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG.hex.
-It has not been flashed. The source base remains 4.5.2 with release label 4.5.3.
+This is the earlier build; field Blackbox logs subsequently confirmed revision
+62e7fa0 was flown. The center-band updates and ANGLE fallback fix have passed host
+tests but have not been built into a new target HEX or flashed. Do not use this
+older HEX expecting the mode fix. The source base remains 4.5.2 with release label 4.5.3.
 
 The native Pi changes are in a separate, already dirty checkout and were not
 committed with firmware. A reviewed source-only backup is:

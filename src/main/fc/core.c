@@ -1024,12 +1024,14 @@ void processRxModes(timeUs_t currentTimeUs)
         processRcAdjustments(currentControlRateProfile);
     }
 
-    // ALTITUDE mode requires self-leveling attitude control. When ALTITUDE mode is active, force ANGLE mode
-    // (even if BOXANGLE is not active) and suppress HORIZON mode.
+    // ALTITUDE selection must retain self-leveling even if throttle control rejects
+    // engagement or releases. Only the ALTITUDE flag follows throttle ownership.
 #ifdef USE_ALTITUDE_CONTROL
-    const bool altitudeModeRequested = altitudeControlActive() && IS_RC_MODE_ACTIVE(BOXALTITUDE);
+    const bool altitudeModeRequested = IS_RC_MODE_ACTIVE(BOXALTITUDE);
+    const bool altitudeModeActive = altitudeModeRequested && altitudeControlActive();
 #else
     const bool altitudeModeRequested = false;
+    const bool altitudeModeActive = false;
 #endif
 
     bool canUseHorizonMode = !altitudeModeRequested;
@@ -1055,7 +1057,7 @@ void processRxModes(timeUs_t currentTimeUs)
         DISABLE_FLIGHT_MODE(HORIZON_MODE);
     }
 
-    if (altitudeModeRequested) {
+    if (altitudeModeActive) {
         if (!FLIGHT_MODE(ALTITUDE_MODE)) {
             ENABLE_FLIGHT_MODE(ALTITUDE_MODE);
         }
