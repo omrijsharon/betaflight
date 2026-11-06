@@ -250,11 +250,12 @@ RAM **94,872 B (48.25%)**, +64 B flash/+8 B RAM over the original controller bui
 The separate FLASH region remains 524 B.
 
 Current local/ignored HEX:
-`obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG_85fe7d3.hex`.
-The familiar `obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG.hex` is an identical copy;
-the earlier file is preserved with suffix `_62e7fa0.hex`.
+`obj/IFLIGHT_BLITZ_F435_ALTITUDE_CONTROL_MAG.hex`.
+Supporting files were moved out of the obj root at the user's request. The
+revision-named copy, previous `_62e7fa0.hex`, manifest, flags, ELF, binary, map and
+their checksums are under `build/altitude-control-85fe7d3-verification/`.
+Keep future verification artifacts under build/, with the final HEX in obj/.
 SHA-256: `c6fa7cbe219a5d2137f3a517c19d6119786afff180a464c4e5e6e2a49d413403`.
-Adjacent .sha256, .build.json, .flags.txt, ELF and map files record local provenance.
 All 26,913 Intel HEX records passed checksum validation, addresses/vectors were
 checked, and decoded HEX bytes matched the ELF-derived binary. Embedded revision,
 board, release, altitude settings and MAG drivers were verified. No FC was flashed
