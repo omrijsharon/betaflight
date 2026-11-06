@@ -15,10 +15,26 @@ sys.path.insert(0, str(ROOT))
 from althold.pi_logger.control import DEFAULTS, GET, SET, STATUS, decode_config, decode_status, encode_config
 
 WRAPPER = r'''
+#include <stddef.h>
 #include "flight/altitude_estimator.c"
 #include "flight/altitude_control.c"
 #include "common/streambuf.h"
+#include "common/crc.h"
 #include "msp/msp_protocol_v2_betaflight.h"
+_Static_assert(offsetof(altitudeControlConfig_t, center_capture) == 16, "preserve stored gains");
+_Static_assert(sizeof(altitudeControlConfig_t) == 18, "compact config layout");
+// Supply the reset template without the embedded linker's section boundaries.
+// Load/store bodies below are extracted unchanged from production pg.c.
+void pgResetInstance(const pgRegistry_t *reg, uint8_t *base) {
+    memcpy(base, reg->reset.ptr, pgSize(reg));
+}
+PG_IO
+int loadConfig(const unsigned char *data, int size) {
+    return pgLoad(&altitudeControlConfig_Registry, data, size, 0);
+}
+int storeConfig(unsigned char *out) {
+    return pgStore(&altitudeControlConfig_Registry, out, sizeof(altitudeControlConfig_t));
+}
 #define MSP_RESULT_ERROR -1
 static bool armed;
 #define ARMING_FLAG(x) armed
@@ -84,6 +100,8 @@ def run(lib):
     lib.altitudeControlCollective.argtypes = [C.c_float]
     lib.altitudeControlCollective.restype = C.c_float
     lib.command.argtypes = [C.c_int, C.c_char_p, C.c_int, C.c_void_p]
+    lib.loadConfig.argtypes = [C.c_char_p, C.c_int]
+    lib.storeConfig.argtypes = [C.c_void_p]
     lib.estimate.argtypes = [C.c_uint, C.c_int, C.c_int, C.c_float, C.c_float, C.POINTER(C.c_float)]
 
     def cmd(index, data=b""):
@@ -110,10 +128,27 @@ def run(lib):
     lib.reset()
     cfg = cmd(GET)
     assert decode_config(cfg) == DEFAULTS
-    trial = encode_config(dict(DEFAULTS, z_p=125, jerk_cms3=600))
+    assert len(cfg) == 19 and cfg[0] == 2
+    trial = encode_config(dict(DEFAULTS, z_p=125, jerk_cms3=600, center_capture=80))
     assert cmd(SET, trial) == b"" and cmd(GET) == trial
-    for bad in [trial[:n] for n in range(len(trial))] + [trial+b"x", b"\x05"+trial[1:], trial[:-2]+b"\xff\xff"]:
+    stored = C.create_string_buffer(18)
+    assert lib.storeConfig(stored) == 18 and stored.raw == trial[1:]
+    assert cmd(SET, cfg) == b""
+    assert lib.loadConfig(stored.raw, 18) and cmd(GET) == trial
+    assert lib.loadConfig(stored.raw[:16], 16)
+    assert decode_config(cmd(GET)) == dict(decode_config(trial), center_capture=100)
+    assert cmd(SET, trial) == b""
+    print("PASS: production PG load/store preserves new setting and upgrades old saved gains with capture=100")
+    for bad in [trial[:n] for n in range(len(trial))] + [trial+b"x", b"\x01"+trial[1:],
+            b"\x01"+trial[1:17], trial[:-2]+b"\xc9\x00", trial[:-2]+b"\xff\xff"]:
         assert cmd(SET, bad) is None and cmd(GET) == trial
+    for value in (-1, 201, 100.0):
+        try:
+            encode_config(dict(DEFAULTS, center_capture=value))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("client accepted invalid center capture")
     assert cmd(SET, cfg) == b""
     now = 100000
 
@@ -156,6 +191,30 @@ def run(lib):
             assert tick(stick=sign*offset)["mode"] == 3
         assert tick(stick=sign*100)["mode"] == 2
     print("PASS: signed ±100 capture, ±115 exit hysteresis, no recapture, rescaled speed mapping and endpoints")
+    for capture in (0, 25, 80, 200):
+        tick(arm=0, aux=0)
+        config = encode_config(dict(DEFAULTS, center_capture=capture))
+        assert cmd(SET, config) == b"" and cmd(GET) == config
+        for sign in (-1, 1):
+            tick(aux=0)
+            tick(stick=sign*(capture+1))
+            assert tick(stick=sign*(capture+1))["mode"] == 1
+            assert tick(stick=sign*capture)["mode"] == 2
+            assert tick(stick=sign*(capture+15))["mode"] == 2
+            assert tick(stick=sign*(capture+16))["mode"] == 3
+            assert cmd(SET, cfg) is None and cmd(GET) == config
+            for _ in range(400):
+                state = tick(stick=sign*500)
+            assert abs(state["speed_cmd_mps"]-sign) < 1e-4
+            for _ in range(400):
+                state = tick(stick=sign*(capture+1))
+            assert state["mode"] == 3 and abs(state["speed_cmd_mps"]) < 1e-4
+            assert tick(stick=sign*capture)["mode"] == 2
+    tick(arm=0, aux=0)
+    assert cmd(SET, cfg) == b""
+    tick(aux=0)
+    tick()
+    print("PASS: MSP v2 live settings at 0/25/80/200, exact hysteresis, endpoints, malformed/old/armed-write rejection")
     for key in ("good", "allow", "delta", "z"):
         assert tick(**{key: 55000 if key == "delta" else float("nan") if key == "z" else 0})["mode"] == 4
         assert tick()["mode"] == 4
@@ -227,10 +286,14 @@ def main():
         tmp = Path(d)
         mixer = (ROOT/"src/main/flight/mixer.c").read_text()
         mixer = re.search(r"#ifdef USE_ALTITUDE_CONTROL\n(    if \(altitudeControlActive\(\)\).*?)\n#endif", mixer, re.S).group(1)
-        (tmp/"check.c").write_text(WRAPPER.replace("CASES", "\n".join(blocks)).replace("MIXER", mixer))
+        pg = (ROOT/"src/main/pg/pg.c").read_text()
+        pg_io = "\n".join(re.search(r"(?:static uint8_t \*|bool |int )" + name + r"\([^\n]*\)\n\{.*?\n\}", pg, re.S).group(0)
+                          for name in ("pgOffset", "pgLoad", "pgStore"))
+        (tmp/"check.c").write_text(WRAPPER.replace("CASES", "\n".join(blocks)).replace("MIXER", mixer).replace("PG_IO", pg_io))
         subprocess.run(["gcc", "-shared", "-fPIC", "-O2", "-ffast-math", "-Wall", "-Wextra", "-Werror",
                         "-DUNIT_TEST", "-DUSE_ALTITUDE_CONTROL", "-I"+str(ROOT/"src/test/unit"),
                         "-I"+str(ROOT/"src/main"), str(tmp/"check.c"), str(ROOT/"src/main/common/streambuf.c"),
+                        str(ROOT/"src/main/common/crc.c"),
                         "-lm", "-o", str(tmp/"check.so")], check=True)
         run(C.CDLL(str(tmp/"check.so")))
 

@@ -26,15 +26,17 @@ transfer has no deliberate throttle step. It does not remove the attitude change
 from enabling ANGLE. LEVEL hover thrust is inferred from that collective and tilt;
 incorrect trim, throttle transients or an accelerating entry can bias it.
 
-Your initial hover stick position is ignored as a vertical request. Until you
+With default settings, your initial hover stick position is ignored as a vertical request. Until you
 move the stick within 100 PWM of midrc (inclusive), it brakes/holds. After that,
 moving beyond 115 PWM from center requests speed; returning within 100 captures
 a stop once. Between 100 and 115 on return it requests zero speed while waiting
 for center capture; an existing HOLD remains latched throughout that range.
 At midrc=1500, capture is 1400..1600; HOLD exits below 1385 or above 1615.
-These thresholds are compile-time constants, not CLI/MSP settings. The speed
-mapping is rescaled over the remaining 385 PWM so full stick retains the configured
-maximum speed. This adds no parameter storage or runtime state.
+The capture width is `alt_ctrl_center_capture` (0..200 PWM, default 100).
+The exit threshold is always capture +15. Speed mapping uses the remaining
+500-(capture+15) PWM so full stick retains the configured maximum speed.
+Setting capture=25 restores the original ±25/±40 behavior; capture=0 requires
+the exact center value. This adds one uint16 setting and no controller history.
 Input is rcData, centered at configured midrc, not throttle-curve output.
 It assumes conventional approximately 1000..2000 endpoints.
 
@@ -96,30 +98,55 @@ The speed loop has P/I/D; D defaults to zero. Gains are fixed-point x100.
     set alt_ctrl_speed_cms = 100
     set alt_ctrl_accel_cms2 = 100
     set alt_ctrl_jerk_cms3 = 400
+    set alt_ctrl_center_capture = 100
     save
 
 Defaults are provisional: height P=1/s, D=0.4; speed P=3/s, I=1/s^2, D=0;
 speed +/-1 m/s, acceleration +/-1 m/s^2, jerk 4 m/s^3.
 Height P range 0..500, height D 0..200, speed P/I 0..1200, speed D 0..200
 (all x100); speed 10..500 cm/s, acceleration 10..300 cm/s^2,
-jerk 20..1000 cm/s^3. CLI and MSP share one firmware settings definition.
+jerk 20..1000 cm/s^3; center capture 0..200 receiver units.
+CLI and MSP share one firmware settings definition.
 Changing controller settings does not change estimator settings.
+The new field is appended to parameter-group version 0: loading an older stored
+controller group retains the eight existing settings and defaults capture to 100.
+Normal CLI `save` or MSP_EEPROM_WRITE persists it. No controller gains are reset
+by this append-only layout change; a full firmware/configuration reset is separate.
 
 ## MSP2, persistence and flight logging
 
 API remains MSP 1.46. These are fork-specific MSP2 commands:
 
-- 0x3013 GET config: version 1 byte, then eight LE uint16 values in CLI order above.
-- 0x3014 SET config: same exact 17-byte payload. Firmware rejects armed writes,
+- 0x3013 GET config: version byte **2**, then nine LE uint16 values in CLI order above
+  (`center_capture` last). Python struct `<B9H`, 19 bytes total.
+- 0x3014 SET config: same exact 19-byte payload. Firmware rejects armed writes,
   wrong version/length and any out-of-range field without partially updating.
+  Old version-1 controller configuration writes are rejected.
   Read back after SET. Changes apply to the next engagement without reboot.
-- 0x3015 GET status: 57 bytes, Python struct <BIBBh12f.
+- 0x3015 GET status: unchanged version 1, 57 bytes, Python struct <BIBBh12f.
   Version, FC micros timestamp, mode, reason, signed stick offset; then twelve LE
   IEEE754 floats: z, v, z_ref, v_ref, a_ref, v_cmd, P, I, D, collective, ceiling, tilt.
   Height is meters, speed m/s, accelerations m/s^2, collective/ceiling normalized,
   tilt a cosine. Timestamp wraps every approximately 71.6 minutes.
 - MSP_EEPROM_WRITE (250) persists ALL current FC settings, disarmed only.
   SET alone is RAM-only. No reboot is necessary; no automatic reboot is issued.
+
+The in-repository `althold.pi_logger.control` codec and `SerialMspClient` support
+configuration v2. With an exclusive, disarmed connection, preserve other values:
+
+```python
+values = client.get_alt_control_config()
+values["center_capture"] = 100
+client.set_alt_control_config(values)  # validates and verifies readback
+client.save_config()                 # optional EEPROM persistence, disarmed
+```
+
+Rollout note (2026-11-06): the installed native Pi logger/tuner still expects
+configuration v1 and is intentionally unchanged while the user flies the old
+firmware. Its configuration parser, per-flight snapshots and exporter must be
+updated to support v2 before using it with this firmware. The commands below
+describe the deployed v1 tools; they cannot yet tune this new field. No target
+HEX was built or flashed for the configurable-band change.
 
 Modes: 0 OFF, 1 WAIT_CENTER, 2 HOLD (including braking), 3 SPEED, 4 LOCKED.
 Reasons: 0 OK, 1 SWITCH, 2 CONFLICT, 3 ESTIMATE, 4 ENTRY, 5 TIMEOUT, 6 WAIT_ANGLE.
@@ -153,7 +180,10 @@ Neither source update installs itself on the Pi or flashes the FC.
 
 Host tests compile actual C source with -O2 -ffast-math -Werror:
 src/test/altitude_control_closed_loop.py and altitude_control_adapter.py.
-They cover 200 stopping trajectories against the simulator's planner, arming and
+They cover 200 stopping trajectories against the simulator's planner, capture
+widths 0/25/80/100/200 in both directions, fixed +15 exit hysteresis, speed mapping,
+configuration v2 validation and production PG load/store (including old-group
+default initialization with existing gains preserved), arming and
 mode latches, off-center engagement, faults/timeouts/nonfinite inputs, sensor
 freshness, accepted-pressure timeout, configuration roundtrips and all truncated
 writes, armed rejection, saturation and motor-lag vertical closed-loop cases.

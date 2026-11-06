@@ -4,7 +4,10 @@
 #include <stdint.h>
 #include "pg/pg.h"
 
-// name, minimum, maximum, default. Order is the v1 MSP wire contract.
+#define ALT_CONTROL_CONFIG_VERSION 2
+#define ALT_CONTROL_CONFIG_PAYLOAD_SIZE 19
+
+// name, minimum, maximum, default. Append-only PG layout; order is the v2 MSP wire contract.
 #define ALT_CONTROL_SETTINGS(X) \
     X(z_p, 0, 500, 100) \
     X(z_d, 0, 200, 40) \
@@ -13,7 +16,8 @@
     X(v_d, 0, 200, 0) \
     X(speed_cms, 10, 500, 100) \
     X(accel_cms2, 10, 300, 100) \
-    X(jerk_cms3, 20, 1000, 400)
+    X(jerk_cms3, 20, 1000, 400) \
+    X(center_capture, 0, 200, 100)
 
 typedef struct {
 #define ALT_FIELD(n, lo, hi, d) uint16_t n;

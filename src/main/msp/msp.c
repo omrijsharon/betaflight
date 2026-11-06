@@ -1342,7 +1342,7 @@ case MSP_NAME:
 
 #ifdef USE_ALTITUDE_CONTROL
     case MSP2_ALT_CONTROL_CONFIG:
-        sbufWriteU8(dst, 1);
+        sbufWriteU8(dst, ALT_CONTROL_CONFIG_VERSION);
 #define ALT_WRITE(n, lo, hi, d) sbufWriteU16(dst, altitudeControlConfig()->n);
         ALT_CONTROL_SETTINGS(ALT_WRITE)
 #undef ALT_WRITE
@@ -4154,7 +4154,7 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 #ifdef USE_ALTITUDE_CONTROL
     case MSP2_SET_ALT_CONTROL_CONFIG: {
         altitudeControlConfig_t next;
-        if (ARMING_FLAG(ARMED) || sbufBytesRemaining(src) != 1 + sizeof(next) || sbufReadU8(src) != 1) {
+        if (ARMING_FLAG(ARMED) || sbufBytesRemaining(src) != ALT_CONTROL_CONFIG_PAYLOAD_SIZE || sbufReadU8(src) != ALT_CONTROL_CONFIG_VERSION) {
             return MSP_RESULT_ERROR;
         }
 #define ALT_READ(n, lo, hi, d) { const int value = sbufReadU16(src); if (value < lo || value > hi) return MSP_RESULT_ERROR; next.n = value; }

@@ -14,7 +14,6 @@ PG_RESET_TEMPLATE(altitudeControlConfig_t, altitudeControlConfig, ALT_CONTROL_SE
 static altitudeControlStatus_t s;
 static bool switchReady, applied;
 static float levelHover, integral, prevV, accelFiltered;
-enum { STICK_CENTER_CAPTURE = 100, STICK_SPEED_START = STICK_CENTER_CAPTURE + 15 };
 static struct { float jerk; uint32_t durationUs; } phases[3];
 static unsigned phase;
 
@@ -138,15 +137,16 @@ void altitudeControlStep(uint32_t now, bool armed, bool requested, bool allowed,
     }
     const float dt = elapsed * 1e-6f, vmax = 0.01f * cfg->speed_cms;
     const float offset = fabsf((float)stick);
-    if (offset <= STICK_CENTER_CAPTURE && s.mode != AC_HOLD) {
+    const unsigned speedStart = cfg->center_capture + 15;
+    if (offset <= cfg->center_capture && s.mode != AC_HOLD) {
         if (s.mode == AC_SPEED) { capture(z, v, aMax, jerk); }
         s.mode = AC_HOLD;
-    } else if (offset > STICK_SPEED_START && s.mode == AC_HOLD) {
+    } else if (offset > speedStart && s.mode == AC_HOLD) {
         s.mode = AC_SPEED;
     }
 
     if (s.mode == AC_SPEED) {
-        const float u = constrainf((offset - STICK_SPEED_START) / (500 - STICK_SPEED_START), 0, 1);
+        const float u = constrainf((offset - speedStart) / (500 - speedStart), 0, 1);
         const float desired = copysignf(vmax * u*u * (3 - 2*u), stick);
         const float accel = constrainf(3 * (desired - s.vRef), -aMax, aMax);
         s.aRef += constrainf(accel - s.aRef, -jerk*dt, jerk*dt);
