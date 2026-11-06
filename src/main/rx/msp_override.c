@@ -24,9 +24,11 @@
 
 #include "rx/msp_override.h"
 #include "rx/msp.h"
+#include "rx/msp_override_watchdog.h"
 #include "fc/rc_modes.h"
 #include "common/maths.h"
 
+static mspOverrideWatchdogState_t mspOverrideWatchdog;
 
 uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rxConfig_t *rxConfig, uint8_t chan)
 {
@@ -36,34 +38,50 @@ uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rx
 
     bool override = (1 << chan) & rxConfig->msp_override_channels_mask;
 
-    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override) {
+    if (rxMspOverrideIsActive() && override) {
         return overrideSample;
     } else {
         return rxSample;
     }
 }
 
+bool rxMspOverrideWatchdogUpdate(timeUs_t currentTimeUs, bool validOverrideFrameReceived)
+{
+    return mspOverrideWatchdogUpdate(
+        &mspOverrideWatchdog,
+        currentTimeUs,
+        IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE),
+        rxConfig()->msp_override_channels_mask,
+        validOverrideFrameReceived);
+}
+
+bool rxMspOverrideIsActive(void)
+{
+    return mspOverrideWatchdog.permitted;
+}
+
+bool rxMspOverrideWatchdogIsLatched(void)
+{
+    return mspOverrideWatchdog.timeoutLatched;
+}
+
+uint32_t rxMspOverrideWatchdogFrameAgeUs(timeUs_t currentTimeUs)
+{
+    return mspOverrideWatchdogFrameAgeUs(&mspOverrideWatchdog, currentTimeUs);
+}
+
+uint32_t rxMspOverrideWatchdogExpiryCount(void)
+{
+    return mspOverrideWatchdog.expiryCount;
+}
 
 bool isMspOverrideControllingSticks(void)
 {
-    // Is the MSP override box active?
-    if (!IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE)) {
+    if (!rxMspOverrideIsActive()) {
         return false;
     }
 
-    // For channels 0..3 (ROLL, PITCH, YAW, THROTTLE),
-    // check if each one is included in msp_override_channels_mask.
-    // i.e., if bits 0..3 of msp_override_channels_mask are set for each channel that we consider "controlled."
-    // If you only require "any" of them to be overridden, adjust logic as desired.
-
-    // Example: require *all* 4 sticks to be overridden
-    const uint8_t stickMask = 0x0F;  // binary 1111, for channels 0..3
-    uint8_t overrideMask = rxConfig()->msp_override_channels_mask & stickMask;
-
-    // if overrideMask == 0x0F, that means channels 0..3 are all included
-    // if partial override is enough for you, tweak this check.
-    return (overrideMask == stickMask);
+    return rxConfig()->msp_override_channels_mask == MSP_OVERRIDE_REQUIRED_CHANNEL_MASK;
 }
 
 #endif
-

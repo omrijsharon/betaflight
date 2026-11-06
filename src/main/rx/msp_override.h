@@ -25,3 +25,8 @@
 
 uint16_t rxMspOverrideReadRawRc(const rxRuntimeState_t *rxRuntimeState, const rxConfig_t *rxConfig, uint8_t chan);
 bool isMspOverrideControllingSticks(void);
+bool rxMspOverrideWatchdogUpdate(timeUs_t currentTimeUs, bool validOverrideFrameReceived);
+bool rxMspOverrideIsActive(void);
+bool rxMspOverrideWatchdogIsLatched(void);
+uint32_t rxMspOverrideWatchdogFrameAgeUs(timeUs_t currentTimeUs);
+uint32_t rxMspOverrideWatchdogExpiryCount(void);

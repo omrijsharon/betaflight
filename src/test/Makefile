@@ -290,6 +290,9 @@ rx_rx_unittest_SRC := \
 		$(USER_DIR)/config/feature.c \
 		$(USER_DIR)/pg/rx.c
 
+msp_override_watchdog_unittest_SRC := \
+		$(USER_DIR)/rx/msp_override_watchdog.c
+
 rx_sumd_unittest_SRC := \
 		$(USER_DIR)/common/crc.c \
 		$(USER_DIR)/common/streambuf.c \

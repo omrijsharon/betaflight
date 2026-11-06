@@ -570,13 +570,30 @@ FAST_CODE_NOINLINE void rxFrameCheck(timeUs_t currentTimeUs, timeDelta_t current
     }
 
 #if defined(USE_RX_MSP_OVERRIDE)
-    if (IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && rxConfig()->msp_override_channels_mask && rxConfig()->msp_override_failsafe) {
-        if (rxMspOverrideFrameStatus() & RX_FRAME_COMPLETE) {
+    const bool mspOverrideFrameReceived = rxMspOverrideFrameStatus() & RX_FRAME_COMPLETE;
+    if (rxMspOverrideWatchdogUpdate(currentTimeUs, mspOverrideFrameReceived)) {
+        rxDataProcessingRequired = true;
+    }
+
+    if (mspOverrideFrameReceived && rxConfig()->msp_override_failsafe && rxMspOverrideIsActive()) {
             rxSignalReceived = true;
             rxDataProcessingRequired = true;
             needRxSignalBefore = currentTimeUs + needRxSignalMaxDelayUs;
-        }
     }
+
+    const uint32_t mspOverrideAgeUs = rxMspOverrideWatchdogFrameAgeUs(currentTimeUs);
+    const uint32_t mspOverrideAgeMs = mspOverrideAgeUs / 1000U;
+    const int16_t mspOverrideAgeDebug = mspOverrideAgeUs == UINT32_MAX
+        ? -1
+        : (mspOverrideAgeMs > (uint32_t)INT16_MAX ? INT16_MAX : (int16_t)mspOverrideAgeMs);
+    const uint32_t mspOverrideExpiryCount = rxMspOverrideWatchdogExpiryCount();
+    const int16_t mspOverrideExpiryDebug = mspOverrideExpiryCount > (uint32_t)INT16_MAX
+        ? INT16_MAX
+        : (int16_t)mspOverrideExpiryCount;
+    DEBUG_SET(DEBUG_RX_SIGNAL_LOSS, 4, rxMspOverrideIsActive());
+    DEBUG_SET(DEBUG_RX_SIGNAL_LOSS, 5, rxMspOverrideWatchdogIsLatched());
+    DEBUG_SET(DEBUG_RX_SIGNAL_LOSS, 6, mspOverrideAgeDebug);
+    DEBUG_SET(DEBUG_RX_SIGNAL_LOSS, 7, mspOverrideExpiryDebug);
 #endif
     
     DEBUG_SET(DEBUG_FAILSAFE, 1, rxSignalReceived);
@@ -618,7 +635,7 @@ static uint16_t getRxfailValue(uint8_t channel)
     bool override = ((1 << channel) & rxConfig()->msp_override_channels_mask) != 0;
 
     // If it's one of the main 4 sticks and MSP override is actually switched on
-    if (channel < NON_AUX_CHANNEL_COUNT && IS_RC_MODE_ACTIVE(BOXMSPOVERRIDE) && override) {
+    if (channel < NON_AUX_CHANNEL_COUNT && rxMspOverrideIsActive() && override) {
         // read the MSP override for this channel, clamp it within min/max
         // This is a typical approach; you might already have a helper like rxMspOverrideReadRawRc().
         uint16_t overrideValue = rxMspOverrideReadRawRc(&rxRuntimeState, rxConfig(), channel);

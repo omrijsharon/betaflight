@@ -58,7 +58,7 @@ void rxMspFrameReceive(uint16_t *frame, int channelCount)
     }
 
     rxMspFrameDone = true;
-    rxMspOverrideFrameDone = true;
+    rxMspOverrideFrameDone = channelCount >= NON_AUX_CHANNEL_COUNT;
 }
 
 static uint8_t rxMspFrameStatus(rxRuntimeState_t *rxRuntimeState)

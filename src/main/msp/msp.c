@@ -2758,7 +2758,7 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
 #ifdef USE_RX_MSP
         {
             uint8_t channelCount = dataSize / sizeof(uint16_t);
-            if (channelCount > MAX_SUPPORTED_RC_CHANNEL_COUNT) {
+            if ((dataSize % sizeof(uint16_t)) != 0 || channelCount > MAX_SUPPORTED_RC_CHANNEL_COUNT) {
                 return MSP_RESULT_ERROR;
             } else {
                 uint16_t frame[MAX_SUPPORTED_RC_CHANNEL_COUNT];
