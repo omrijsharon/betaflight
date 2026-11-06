@@ -90,6 +90,9 @@
 #include "flight/pid.h"
 #include "flight/pid_init.h"
 #include "flight/position.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "flight/altitude_control.h"
+#endif
 #include "flight/rpm_filter.h"
 #include "flight/servos.h"
 
@@ -1337,6 +1340,27 @@ case MSP_NAME:
 #endif
         break;
 
+#ifdef USE_ALTITUDE_CONTROL
+    case MSP2_ALT_CONTROL_CONFIG:
+        sbufWriteU8(dst, 1);
+#define ALT_WRITE(n, lo, hi, d) sbufWriteU16(dst, altitudeControlConfig()->n);
+        ALT_CONTROL_SETTINGS(ALT_WRITE)
+#undef ALT_WRITE
+        break;
+    case MSP2_ALT_CONTROL_STATUS: {
+        const altitudeControlStatus_t *s = altitudeControlStatus();
+        sbufWriteU8(dst, 1);
+        sbufWriteU32(dst, s->timeUs);
+        sbufWriteU8(dst, s->mode);
+        sbufWriteU8(dst, s->reason);
+        sbufWriteU16(dst, s->stick);
+        // Native little-endian IEEE754 floats; explicit fields, no struct padding.
+        const float values[] = { s->z, s->v, s->zRef, s->vRef, s->aRef, s->vCmd,
+            s->p, s->i, s->d, s->output, s->ceiling, s->tilt };
+        sbufWriteData(dst, values, sizeof(values));
+        break;
+    }
+#endif
     case MSP2_BETAFLIGHT_ALT_EST_CONFIG:
         {
             const altitudeEstimatorConfig_t *cfg = altitudeEstimatorConfig();
@@ -4127,6 +4151,19 @@ static mspResult_e mspProcessInCommand(mspDescriptor_t srcDesc, int16_t cmdMSP, 
         break;
 #endif
 
+#ifdef USE_ALTITUDE_CONTROL
+    case MSP2_SET_ALT_CONTROL_CONFIG: {
+        altitudeControlConfig_t next;
+        if (ARMING_FLAG(ARMED) || sbufBytesRemaining(src) != 1 + sizeof(next) || sbufReadU8(src) != 1) {
+            return MSP_RESULT_ERROR;
+        }
+#define ALT_READ(n, lo, hi, d) { const int value = sbufReadU16(src); if (value < lo || value > hi) return MSP_RESULT_ERROR; next.n = value; }
+        ALT_CONTROL_SETTINGS(ALT_READ)
+#undef ALT_READ
+        *altitudeControlConfigMutable() = next;
+        break;
+    }
+#endif
     case MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG:
         {
             if (sbufBytesRemaining(src) != ALTITUDE_ESTIMATOR_CONFIG_PAYLOAD_SIZE || sbufReadU8(src) != ALTITUDE_ESTIMATOR_VERSION) {

@@ -220,7 +220,9 @@ void initActiveBoxIds(void)
     }
 
     if (sensors(SENSOR_BARO)) {
-        BME(BOXALTITUDE);
+#ifdef USE_ALTITUDE_CONTROL
+        if (sensors(SENSOR_ACC)) { BME(BOXALTITUDE); }
+#endif
         BME(BOXALTARM);
     }
 

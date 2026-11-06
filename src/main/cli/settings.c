@@ -63,6 +63,9 @@
 #include "flight/mixer.h"
 #include "flight/pid.h"
 #include "flight/position.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "flight/altitude_control.h"
+#endif
 #include "flight/rpm_filter.h"
 #include "flight/servos.h"
 
@@ -1780,6 +1783,11 @@ const clivalue_t valueTable[] = {
     { "altitude_lpf",          VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 1000 }, PG_POSITION, offsetof(positionConfig_t, altitude_lpf) },
     { "altitude_d_lpf",        VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 1000 }, PG_POSITION, offsetof(positionConfig_t, altitude_d_lpf) },
 
+#ifdef USE_ALTITUDE_CONTROL
+#define ALT_CLI(n, lo, hi, d) { "alt_ctrl_" #n, VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { lo, hi }, PG_ALTITUDE_CONTROL, offsetof(altitudeControlConfig_t, n) },
+    ALT_CONTROL_SETTINGS(ALT_CLI)
+#undef ALT_CLI
+#endif
 // PG_ALTITUDE_ESTIMATOR_CONFIG
     { "alt_est_flags",                 VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 1 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_flags) },
     { "alt_est_accel_noise_cms2",      VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 1, 1000 }, PG_ALTITUDE_ESTIMATOR_CONFIG, offsetof(altitudeEstimatorConfig_t, alt_est_accel_noise_cms2) },

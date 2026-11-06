@@ -33,6 +33,10 @@
 #define MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG  0x3011
 #define MSP2_BETAFLIGHT_ALT_EST_STATUS      0x3012
 
+#define MSP2_ALT_CONTROL_CONFIG             0x3013
+#define MSP2_SET_ALT_CONTROL_CONFIG         0x3014
+#define MSP2_ALT_CONTROL_STATUS             0x3015
+
 // MSP2_SET_TEXT and MSP2_GET_TEXT variable types
 #define MSP2TEXT_PILOT_NAME                      1
 #define MSP2TEXT_CRAFT_NAME                      2

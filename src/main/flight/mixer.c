@@ -51,6 +51,9 @@
 #include "flight/mixer_init.h"
 #include "flight/mixer_tricopter.h"
 #include "flight/position.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "flight/altitude_control.h"
+#endif
 #include "flight/pid.h"
 #include "flight/rpm_filter.h"
 
@@ -74,7 +77,6 @@ float FAST_DATA_ZERO_INIT motor[MAX_SUPPORTED_MOTORS];
 float motor_disarmed[MAX_SUPPORTED_MOTORS];
 
 static FAST_DATA_ZERO_INIT int throttleAngleCorrection;
-static FAST_DATA_ZERO_INIT int throttleAltitudeCorrection;
 
 float getMotorMixRange(void)
 {
@@ -647,6 +649,21 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
         throttle = applyThrottleLimit(throttle);
     }
 
+#ifdef USE_ALTITUDE_CONTROL
+    if (altitudeControlActive()) {
+        if (!ARMING_FLAG(ARMED) || !IS_RC_MODE_ACTIVE(BOXALTITUDE)) {
+            altitudeControlRelease(AC_SWITCH);
+        } else if (!failsafeIsReceivingRxData() || failsafeIsActive() || FLIGHT_MODE(GPS_RESCUE_MODE) || launchControlActive) {
+            altitudeControlRelease(AC_CONFLICT);
+        } else if ((uint32_t)(currentTimeUs - altitudeControlStatus()->timeUs) > 50000) {
+            altitudeControlRelease(AC_TIMEOUT);
+        }
+    }
+    const bool controlled = altitudeControlActive() && FLIGHT_MODE(ANGLE_MODE) && FLIGHT_MODE(ALTITUDE_MODE);
+    if (controlled) {
+        throttle = fminf(altitudeControlCollective(mixerThrottle), mixerAltitudeCeiling());
+    }
+#endif
     // use scaled throttle, without dynamic idle throttle offset, as the input to antigravity
     pidUpdateAntiGravityThrottleFilter(throttle);
 
@@ -662,7 +679,12 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
 #if defined(USE_THROTTLE_BOOST)
     if (throttleBoost > 0.0f) {
         const float throttleHpf = throttle - pt1FilterApply(&throttleLpf, throttle);
-        throttle = constrainf(throttle + throttleBoost * throttleHpf, 0.0f, 1.0f);
+#ifdef USE_ALTITUDE_CONTROL
+        if (!controlled)
+#endif
+        {
+            throttle = constrainf(throttle + throttleBoost * throttleHpf, 0.0f, 1.0f);
+        }
     }
 #endif
 
@@ -753,6 +775,9 @@ FAST_CODE_NOINLINE void mixTable(timeUs_t currentTimeUs)
     if (featureIsEnabled(FEATURE_MOTOR_STOP)
         && ARMING_FLAG(ARMED)
         && !mixerRuntime.feature3dEnabled
+#ifdef USE_ALTITUDE_CONTROL
+        && !controlled
+#endif
         && !airmodeEnabled
         && !FLIGHT_MODE(GPS_RESCUE_MODE)   // disable motor_stop while GPS Rescue is active
         && (rcData[THROTTLE] < rxConfig()->mincheck)) {
@@ -769,10 +794,12 @@ void mixerSetThrottleAngleCorrection(int correctionValue)
     throttleAngleCorrection = correctionValue;
 }
 
-void mixerSetThrottleAltitudeCorrection(int correctionValue)
+#ifdef USE_ALTITUDE_CONTROL
+float mixerAltitudeCeiling(void)
 {
-    throttleAltitudeCorrection = correctionValue;
+    return applyThrottleLimit(1.0f);
 }
+#endif
 
 float mixerGetThrottle(void)
 {

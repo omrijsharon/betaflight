@@ -157,7 +157,8 @@
 #define PG_MSP_CONFIG               557
 #define PG_SOFTSERIAL_PIN_CONFIG    558
 #define PG_ALTITUDE_ESTIMATOR_CONFIG 559
-#define PG_BETAFLIGHT_END           559
+#define PG_ALTITUDE_CONTROL          560
+#define PG_BETAFLIGHT_END           560
 
 
 // OSD configuration (subject to change)

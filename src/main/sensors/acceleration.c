@@ -56,6 +56,9 @@ void accUpdate(timeUs_t currentTimeUs)
         return;
     }
     acc.isAccelUpdatedAtLeastOnce = true;
+#ifdef USE_ALTITUDE_CONTROL
+    acc.sampleTimeUs = currentTimeUs;
+#endif
 
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
         const int16_t val =  acc.dev.ADCRaw[axis];

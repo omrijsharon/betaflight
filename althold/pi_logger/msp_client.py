@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import control
+
 MSP2_BETAFLIGHT_ALT_EST_CONFIG = 0x3010
 MSP2_BETAFLIGHT_SET_ALT_EST_CONFIG = 0x3011
 MSP2_BETAFLIGHT_ALT_EST_STATUS = 0x3012
@@ -284,6 +286,19 @@ class SerialMspClient:
 
     def get_alt_est_status(self) -> dict[str, int]:
         return parse_status(self.request(MSP2_BETAFLIGHT_ALT_EST_STATUS))
+
+    def get_alt_control_config(self):
+        return control.decode_config(self.request(control.GET))
+
+    def set_alt_control_config(self, values):
+        payload = control.encode_config(values)
+        self.request(control.SET, payload)  # firmware rejects all writes while armed
+        if self.request(control.GET) != payload:
+            raise RuntimeError("Altitude control settings readback mismatch")
+        return values.copy()
+
+    def get_alt_control_status(self):
+        return control.decode_status(self.request(control.STATUS))
 
     def get_arm_box_index(self) -> int:
         if self._arm_box_index is not None:

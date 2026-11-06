@@ -70,6 +70,9 @@
 #include "flight/mixer.h"
 #include "flight/pid.h"
 #include "flight/position.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "flight/altitude_control.h"
+#endif
 #include "flight/rpm_filter.h"
 #include "flight/servos.h"
 
@@ -834,7 +837,11 @@ bool processRx(timeUs_t currentTimeUs)
         airmodeIsActivated = false;
     }
 
-    if (ARMING_FLAG(ARMED) && (airmodeIsActivated || throttleActive || launchControlActive || isFixedWing())) {
+    if (ARMING_FLAG(ARMED) && (airmodeIsActivated || throttleActive || launchControlActive || isFixedWing()
+#ifdef USE_ALTITUDE_CONTROL
+        || altitudeControlActive()
+#endif
+        )) {
         pidSetItermReset(false);
         pidStabilisationState(PID_STABILISATION_ON);
     } else {
@@ -953,6 +960,9 @@ void processRxModes(timeUs_t currentTimeUs)
         && !isFixedWing()
         && !featureIsEnabled(FEATURE_3D)
         && !airmodeIsEnabled()
+#ifdef USE_ALTITUDE_CONTROL
+        && !altitudeControlActive()
+#endif
         && !FLIGHT_MODE(GPS_RESCUE_MODE)  // disable auto-disarm when GPS Rescue is active
     ) {
         if (isUsingSticksForArming()) {
@@ -1016,7 +1026,11 @@ void processRxModes(timeUs_t currentTimeUs)
 
     // ALTITUDE mode requires self-leveling attitude control. When ALTITUDE mode is active, force ANGLE mode
     // (even if BOXANGLE is not active) and suppress HORIZON mode.
-    const bool altitudeModeRequested = IS_RC_MODE_ACTIVE(BOXALTITUDE) && sensors(SENSOR_BARO);
+#ifdef USE_ALTITUDE_CONTROL
+    const bool altitudeModeRequested = altitudeControlActive() && IS_RC_MODE_ACTIVE(BOXALTITUDE);
+#else
+    const bool altitudeModeRequested = false;
+#endif
 
     bool canUseHorizonMode = !altitudeModeRequested;
     if ((IS_RC_MODE_ACTIVE(BOXANGLE) || altitudeModeRequested || failsafeIsActive()) && (sensors(SENSOR_ACC))) {

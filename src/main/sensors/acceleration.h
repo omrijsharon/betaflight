@@ -56,6 +56,9 @@ typedef struct acc_s {
     uint16_t sampleRateHz;
     float accADC[XYZ_AXIS_COUNT];
     bool isAccelUpdatedAtLeastOnce;
+#ifdef USE_ALTITUDE_CONTROL
+    uint32_t sampleTimeUs;
+#endif
 } acc_t;
 
 extern acc_t acc;

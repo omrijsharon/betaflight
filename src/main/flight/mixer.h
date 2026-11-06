@@ -139,7 +139,9 @@ void writeMotors(void);
 bool mixerIsTricopter(void);
 
 void mixerSetThrottleAngleCorrection(int correctionValue);
-void mixerSetThrottleAltitudeCorrection(int correctionValue);
+#ifdef USE_ALTITUDE_CONTROL
+float mixerAltitudeCeiling(void);
+#endif
 float mixerGetThrottle(void);
 mixerMode_e getMixerMode(void);
 bool mixerModeIsFixedWing(mixerMode_e mixerMode);

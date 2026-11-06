@@ -12,6 +12,15 @@
 #include "common/maths.h"
 
 #include "drivers/time.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "config/feature.h"
+#include "fc/core.h"
+#include "fc/rc_controls.h"
+#include "fc/rc_modes.h"
+#include "flight/failsafe.h"
+#include "pg/rx.h"
+#include "rx/rx.h"
+#endif
 
 #include "fc/runtime_config.h"
 
@@ -19,6 +28,9 @@
 #include "flight/imu.h"
 #include "flight/mixer.h"
 #include "flight/position.h"
+#ifdef USE_ALTITUDE_CONTROL
+#include "flight/altitude_control.h"
+#endif
 
 #include "sensors/acceleration.h"
 #include "sensors/barometer.h"
@@ -76,7 +88,6 @@ void positionInit(void)
 #ifdef USE_BARO
     lastBaroSampleNumber = baro.sampleNumber;
 #endif
-    mixerSetThrottleAltitudeCorrection(0);
 }
 
 void calculateEstimatedAltitude(void)
@@ -115,7 +126,29 @@ void calculateEstimatedAltitude(void)
     estimatedVario = (int16_t)constrain(lrintf(pt2FilterApply(&altitudeDerivativeLpf, status->velocityCms)), INT16_MIN, INT16_MAX);
 #endif
 
-    mixerSetThrottleAltitudeCorrection(0);
+#ifdef USE_ALTITUDE_CONTROL
+    static timeUs_t lastFusionUs;
+    static bool haveFusion;
+    if (!ARMING_FLAG(ARMED) || (status->flags & ALT_EST_STATUS_RESET)) {
+        haveFusion = false;
+    }
+    if (status->flags & ALT_EST_STATUS_BARO_FUSED) {
+        lastFusionUs = nowUs;
+        haveFusion = true;
+    }
+    if ((uint32_t)(nowUs - lastFusionUs) > 500000) {
+        haveFusion = false;
+    }
+    const bool healthy = haveFusion && haveAccel && (uint32_t)(nowUs - acc.sampleTimeUs) <= 50000 &&
+        sensors(SENSOR_BARO) &&
+        !(status->flags & (ALT_EST_STATUS_NO_DATUM | ALT_EST_STATUS_INVALID_INPUT | ALT_EST_STATUS_BAD_TIME | ALT_EST_STATUS_RESET));
+    const bool allowed = failsafeIsReceivingRxData() && !failsafeIsActive() && !FLIGHT_MODE(GPS_RESCUE_MODE) && !IS_RC_MODE_ACTIVE(BOXGPSRESCUE) &&
+        !isLaunchControlActive() && !isFlipOverAfterCrashActive() && !featureIsEnabled(FEATURE_3D) &&
+        !isFixedWing() && !isUsingSticksForArming() && rMat[2][2] > 0.5f;
+    altitudeControlStep(nowUs, ARMING_FLAG(ARMED), IS_RC_MODE_ACTIVE(BOXALTITUDE), allowed, healthy,
+        rcData[THROTTLE] - rxConfig()->midrc, status->altitudeCm * 0.01f, status->velocityCms * 0.01f,
+        rMat[2][2], mixerGetThrottle(), mixerAltitudeCeiling());
+#endif
 
     DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 0, lrintf(status->accelWorldZCms2));
     DEBUG_SET(DEBUG_ALTITUDE_ESTIMATOR, 1, lrintf(status->baroAltitudeCm));
